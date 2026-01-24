@@ -100,9 +100,8 @@ def transform_under_corr(df: pd.DataFrame, threshold: float = 0.95, visualizatio
 def run_model_grid(estimator, param_grid, X_train, y_train, name):
     print(f"\n--- Entrenando {name} (GridSearch) ---")
     
-    # Usamos StratifiedKFold si es posible, o LOOCV si son muy pocos datos
-    # Como filtramos solo extinct, asumimos pocos datos -> LOOCV es más seguro
-    cv_strategy = LeaveOneOut()
+    # StratifiedKFold suele ser mejor para Extant que tienen más datos
+    cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     
     grid_search = GridSearchCV(
         estimator=estimator,
@@ -133,7 +132,7 @@ def run_xgboost(X_train, y_train, le):
         estimator=xgb_base,
         param_grid=param_grid_xgb,
         scoring='accuracy',
-        cv=LeaveOneOut(),
+        cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
         n_jobs=-1,
         verbose=1
     )
@@ -145,7 +144,7 @@ def run_xgboost(X_train, y_train, le):
 
 def evaluate_and_log(results_list, model_name, model, X_test, y_test, cv_score, best_params, label_encoder=None):
     """
-    Evalúa el modelo en el set de TEST (Extinct reservado) y guarda todas las métricas.
+    Evalúa el modelo en el set de TEST (Extant reservado) y guarda todas las métricas.
     """
     # Predicción
     y_pred = model.predict(X_test)
@@ -186,44 +185,36 @@ if __name__ == "__main__":
 
     # --- A. Carga ---
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    FILE = os.path.join(BASE_DIR, "src/dataset_complete_onehot_norm.csv")
+    FILE = os.path.join(BASE_DIR, "src/dataset_complete_onehot.csv")
 
     df = read_dataset(FILE)
 
     # --- B. Limpieza ---
     df.columns = df.columns.str.strip()
-    STATUS_COL = "Extant/Extinct"
-    STATUS_COL2 = "Status"
+    STATUS_COL = "Extant/Extinct" 
+    # Comprobación de nombre de columna
+    if "Status" in df.columns: STATUS_COL = "Status"
+    
     TARGET_COL = "Specie"
 
-    if STATUS_COL in df.columns:
-        df[STATUS_COL] = df[STATUS_COL].astype(str).str.strip()
-        df[TARGET_COL] = df[TARGET_COL].astype(str).str.strip()
-        # --- C. FILTRADO (SOLO EXTINCT) ---
-        # Aquí está el cambio clave: Nos quedamos SOLO con los Extinct
-        df_extinct = df[df[STATUS_COL] == 'Extinct'].copy()
-
-    elif STATUS_COL2 in df.columns:
-        df[STATUS_COL2] = df[STATUS_COL2].astype(str).str.strip()
-        df[TARGET_COL] = df[TARGET_COL].astype(str).str.strip()
-        # --- C. FILTRADO (SOLO EXTINCT) ---
-        # Aquí está el cambio clave: Nos quedamos SOLO con los Extinct
-        df_extinct = df[df[STATUS_COL2] == 'Extinct'].copy()
-
-    else:
-        print("❌ Error: Columna de estado no encontrada.")
+    if STATUS_COL not in df.columns:
+        print(f"❌ Error: No se encuentra la columna '{STATUS_COL}'.")
         exit()
 
-    # --- C. FILTRADO (SOLO EXTINCT) ---
-    # Aquí está el cambio clave: Nos quedamos SOLO con los Extinct
+    df[STATUS_COL] = df[STATUS_COL].astype(str).str.strip()
+    df[TARGET_COL] = df[TARGET_COL].astype(str).str.strip()
 
-    
+    # --- C. FILTRADO (SOLO EXTANT) ---
+    print(f">>> Filtrando datos para usar SOLO especies EXTANT (Vivas)")
+    df_extant = df[df[STATUS_COL] == 'Extant'].copy()
 
-    # --- D. División Train / Test (80/20) sobre Extinct ---
-    X_full = transform_to_valid_cols(df_extinct)
-    y_full = df_extinct[TARGET_COL]
+    print(f"Total de muestras Extant: {len(df_extant)}")
 
-    # Intentamos división estratificada, si falla (clases con 1 muestra), hacemos aleatoria
+    # --- D. División Train / Test (80/20) sobre Extant ---
+    X_full = transform_to_valid_cols(df_extant)
+    y_full = df_extant[TARGET_COL]
+
+    # Intentamos división estratificada (mejor para clasificar especies)
     try:
         X_train, X_test, y_train, y_test = train_test_split(
             X_full, y_full, test_size=0.2, random_state=42, stratify=y_full
@@ -264,14 +255,12 @@ if __name__ == "__main__":
 
     # 2. XGBoost
     le = LabelEncoder()
-    # Ajustamos encoder con todas las etiquetas posibles en train (cuidado si hay etiquetas nuevas en test, fallará)
-    # Una buena práctica es ajustar el encoder con y_full para conocer todas las clases, aunque solo entrenemos con y_train
-    le.fit(y_full) 
+    le.fit(y_full) # Ajustamos encoder con todas las especies disponibles en Extant
     try:
         model, cv_score, params = run_xgboost(X_train_reduced, y_train, le)
         evaluate_and_log(results_log, "XGBoost", model, X_test_reduced, y_test, cv_score, params, label_encoder=le)
     except Exception as e:
-        print(f"⚠️ Error en XGBoost (probablemente clases faltantes en train): {e}")
+        print(f"⚠️ Error en XGBoost: {e}")
 
     # 3. Logistic Regression
     model, cv_score, params = run_model_grid(LogisticRegression(max_iter=5000, random_state=42), param_grid_logreg, X_train_std, y_train, "Logistic Regression")
@@ -286,7 +275,7 @@ if __name__ == "__main__":
         model, cv_score, params = run_model_grid(LinearDiscriminantAnalysis(), param_grid_lda, X_train_std, y_train, "LDA")
         evaluate_and_log(results_log, "LDA", model, X_test_std, y_test, cv_score, params)
     except Exception as e:
-        print(f"⚠️ Error en LDA (quizás colinealidad o pocas clases): {e}")
+        print(f"⚠️ Error en LDA: {e}")
 
     # 6. Naive Bayes
     model, cv_score, params = run_model_grid(GaussianNB(), param_grid_nb, X_train_yj, y_train, "Naive Bayes")
@@ -300,10 +289,10 @@ if __name__ == "__main__":
         # Ordenar por mejor Accuracy en Test
         df_results = df_results.sort_values(by="Test_Accuracy", ascending=False)
         
-        output_file = "resultados_metricas_extinct_only.csv"
+        output_file = "resultados_metricas_extant_only.csv"
         df_results.to_csv(output_file, index=False)
         
         print(df_results)
         print(f"\n✅ Archivo generado: {output_file}")
     else:
-        print("⚠️ No se generaron resultados (¿fallaron todos los modelos?).")
+        print("⚠️ No se generaron resultados.")

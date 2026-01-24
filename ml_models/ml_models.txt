@@ -1,5 +1,4 @@
-this folder executes various classical ML algorithms to the datasets. For the moment, considering only Extinct data
-
+this folder executes various classical ML algorithms to the datasets.
 *Preprocessing includes deleting redundant variables
 
 src: includes all datasets used for obtaining results

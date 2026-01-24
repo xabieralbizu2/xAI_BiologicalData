@@ -1,5 +1,5 @@
 #----LogReg----
-C_values_logreg = [0.01, 0.05, 0.1, 0.2, 0.5, 1]
+C_values_logreg = [0.001, 0.005, 0.01, 0.02, 0.05, 0.1]
 param_grid_logreg = [
     # --- MODELO 1: L2 ---
     {

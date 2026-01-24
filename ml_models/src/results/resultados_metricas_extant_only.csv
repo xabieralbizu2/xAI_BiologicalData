@@ -1,0 +1,7 @@
+Modelo,CV_Accuracy_Train,Test_Accuracy,Test_F1_Weighted,Test_Precision,Test_Recall,Best_Params
+Naive Bayes,0.1481,0.2059,0.1768,0.1999,0.2059,{'var_smoothing': 0.003944206059437656}
+MLP Neural Net,0.1704,0.1765,0.1536,0.1565,0.1765,"{'activation': 'tanh', 'alpha': 0.2, 'hidden_layer_sizes': (10,), 'learning_rate': 'constant', 'solver': 'adam'}"
+Decision Tree,0.2074,0.1471,0.1039,0.0949,0.1471,"{'criterion': 'gini', 'max_depth': 3, 'min_samples_leaf': 1, 'min_samples_split': 10}"
+LDA,0.163,0.1471,0.1291,0.1446,0.1471,"{'shrinkage': 0.5, 'solver': 'lsqr'}"
+XGBoost,0.1852,0.1176,0.0955,0.0899,0.1176,"{'gamma': 0.001, 'learning_rate': 0.005, 'max_depth': 3, 'min_child_weight': 1}"
+Logistic Regression,0.2148,0.0882,0.0674,0.0575,0.0882,"{'C': 0.01, 'multi_class': 'multinomial', 'penalty': 'l2', 'solver': 'lbfgs'}"
