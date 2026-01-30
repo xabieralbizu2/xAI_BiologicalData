@@ -45,7 +45,7 @@ if __name__ == "__main__":
     # 1. CARGA DE DATOS
     # -----------------
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    FILE = os.path.join(BASE_DIR, "../one_hot/dataset_complete_onehot.csv")
+    FILE = os.path.join(BASE_DIR, "../one_hot/dataset_noonehot.csv")
 
     df = pd.read_csv(FILE)
 
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     # 4. TRANSFORMACIÓN (YEO-JOHNSON)
     # -------------------------------
     print("Aplicando Transformación Yeo-Johnson...")
-    pt = PowerTransformer(method='yeo-johnson', standardize=True)
+    pt = PowerTransformer(method='yeo-johnson', standardize=False)
     
     # Transformamos solo las continuas
     X_trans = pt.fit_transform(df[continuous_cols])

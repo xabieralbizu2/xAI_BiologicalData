@@ -3,94 +3,29 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.preprocessing import StandardScaler
 import os
 
-# --- CONFIGURACIÓN ---
-APPLY_CORR_FILTER = False  
-CORR_THRESHOLD = 0.90     
+# ==========================================
+# CONFIGURACIÓN
+# ==========================================
+INPUT_DIR = '.'  # Carpeta donde buscar los CSVs (usa '.' para la actual)
+APPLY_CORR_FILTER = True
+CORR_THRESHOLD = 0.9
+APPLY_SCALING = True
 
-# --- FUNCIÓN DE FILTRADO ---
+# ---------------------------------------------------------
+# 1. FUNCIONES AUXILIARES (TU CÓDIGO ORIGINAL)
+# ---------------------------------------------------------
 def get_uncorrelated_columns(df: pd.DataFrame, threshold: float = 0.95, visualization: bool = False) -> list:
-    """
-    Identifica las columnas a mantener basándose en la correlación.
-    """
+    """Retorna la lista de columnas que NO tienen alta correlación entre sí."""
     corr_matrix = df.corr().abs()
     upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
     to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
-    
-    if visualization:
-        print(f"--- FILTRO DE CORRELACIÓN (Sobre datos de entrenamiento) ---")
-        print(f"Umbral: {threshold}")
-        print(f"Variables originales: {df.shape[1]}")
-        print(f"Variables a eliminar ({len(to_drop)}): {to_drop}")
-        
     return [c for c in df.columns if c not in to_drop]
 
-# 1. Cargar datos
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FILE = os.path.join(BASE_DIR, "../src/dataset_complete_onehot_norm.csv")
-
-df = pd.read_csv(FILE)
-
-# Limpieza básica (asegurar numéricos)
-df.columns = df.columns.str.strip()
-cols_meta = ['Status', 'Specie', 'Specimen'] # Columnas que no son features
-features = [c for c in df.columns if c not in cols_meta]
-
-# Convertir a numérico y rellenar nulos
-df[features] = df[features].apply(pd.to_numeric, errors='coerce').fillna(0)
-
-# 2. Separar EXTANT (Entrenamiento) y EXTINCT (Proyección)
-df_extant = df[df['Status'] == 'Extant'].copy()
-df_extinct = df[df['Status'] == 'Extinct'].copy()
-
-X_train = df_extant[features]
-y_train = df_extant['Specie']
-
-X_project = df_extinct[features]
-y_project_specie = df_extinct['Specie']
-
-print(f"Datos Extant (Train): {X_train.shape}")
-print(f"Datos Extinct (Project): {X_project.shape}")
-
-# --- APLICACIÓN DEL FILTRO DE CORRELACIÓN ---
-if APPLY_CORR_FILTER:
-    # Aprendemos qué columnas borrar basándonos SOLO en Extant
-    cols_to_keep = get_uncorrelated_columns(X_train, threshold=CORR_THRESHOLD, visualization=True)
-    
-    # Aplicamos el filtro a ambos
-    X_train = X_train[cols_to_keep]
-    X_project = X_project[cols_to_keep]
-    
-    print(f"Variables finales utilizadas: {X_train.shape[1]}")
-    print("-----------------------------")
-
-# 3. Entrenar LDA (Con Extant)
-n_classes = len(y_train.unique())
-n_features = X_train.shape[1]
-n_components = min(2, n_classes - 1, n_features)
-
-lda = LinearDiscriminantAnalysis(n_components=n_components)
-
-# Ajustamos (Fit) con Extant
-X_lda_train = lda.fit_transform(X_train, y_train)
-
-# Proyectamos (Transform) los Extinct usando el modelo entrenado
-# Nota: Si Extinct tiene valores muy locos, saldrán muy lejos en el gráfico
-X_lda_project = lda.transform(X_project)
-
-# 4. Crear DataFrames para graficar
-# Extant
-col_names = [f"LD{i+1}" for i in range(X_lda_train.shape[1])]
-df_plot_train = pd.DataFrame(X_lda_train, columns=col_names)
-df_plot_train["target"] = y_train.values
-
-# Extinct
-df_plot_project = pd.DataFrame(X_lda_project, columns=col_names)
-df_plot_project["target"] = y_project_specie.values # Para etiquetarlos si quieres
-
-# 5. Función para graficar elipses
 def draw_ellipse(x, y, ax, n_std=2.0, **kwargs):
+    """Dibuja una elipse de covarianza (intervalo de confianza)."""
     if x.size < 2: return
     cov = np.cov(x, y)
     vals, vecs = np.linalg.eigh(cov)
@@ -101,56 +36,160 @@ def draw_ellipse(x, y, ax, n_std=2.0, **kwargs):
     ell = Ellipse(xy=(np.mean(x), np.mean(y)), width=width, height=height, angle=theta, **kwargs)
     ax.add_patch(ell)
 
-# 6. Generar el gráfico
-fig, ax = plt.subplots(figsize=(12, 10))
+def process_file(file_path):
+    filename = os.path.basename(file_path)
+    print(f"\n{'='*40}")
+    print(f"PROCESANDO: {filename}")
+    print(f"{'='*40}")
 
-# Colores para las especies Extant
-targets_train = df_plot_train["target"].unique()
-colors = plt.cm.tab10(np.linspace(0, 1, len(targets_train)))
+    try:
+        # --- CARGA DE DATOS ---
+        df = pd.read_csv(file_path)
 
-if X_lda_train.shape[1] >= 2:
-    # A. Graficar EXTANT (Puntos + Elipses)
-    for i, target in enumerate(targets_train):
-        subset = df_plot_train[df_plot_train["target"] == target]
+        # 1. LIMPIEZA: Eliminar espacios en 'Status' si existe
+        if 'Status' in df.columns:
+            df['Status'] = df['Status'].astype(str).str.strip()
+        else:
+            print(f"⚠️ Saltando {filename}: No tiene columna 'Status'")
+            return
+
+        # 2. SEPARACIÓN DE CONJUNTOS
+        df_extant = df[df['Status'] == 'Extant'].copy()
+        df_extinct = df[df['Status'] == 'Extinct'].copy()
+
+        # Si no hay Extant, no podemos entrenar
+        if df_extant.empty:
+            print(f"⚠️ Saltando {filename}: No hay datos 'Extant' para entrenar.")
+            return
+
+        # 3. SELECCIÓN DE VARIABLES NUMÉRICAS
+        # Filtramos columnas que no sean numéricas automáticamente
+        X_train = df_extant.select_dtypes(include=[np.number])
+        y_train = df_extant['Target_Specie']
+
+        X_project = df_extinct.select_dtypes(include=[np.number])
+        y_project_specie = df_extinct['Target_Specie'] if not df_extinct.empty else pd.Series()
+
+        # Asegurar que X_project tenga las mismas columnas que X_train
+        # (Por si acaso alguna columna se borró en un subset y no en otro)
+        common_cols = X_train.columns.intersection(X_project.columns)
+        X_train = X_train[common_cols]
+        X_project = X_project[common_cols]
+
+        # ---------------------------------------------------------
+        # PREPROCESAMIENTO
+        # ---------------------------------------------------------
+        features = list(X_train.columns)
+
+        if APPLY_CORR_FILTER:
+            cols_to_keep = get_uncorrelated_columns(X_train, threshold=CORR_THRESHOLD, visualization=False)
+            X_train = X_train[cols_to_keep]
+            X_project = X_project[cols_to_keep]
+            features = cols_to_keep
+            print(f"-> Variables tras filtro correlación: {len(features)}")
+
+        if APPLY_SCALING:
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            # Solo transformamos X_project si tiene datos
+            if not X_project.empty:
+                X_project_scaled = scaler.transform(X_project)
+                X_project = pd.DataFrame(X_project_scaled, columns=features, index=X_project.index)
+            
+            X_train = pd.DataFrame(X_train_scaled, columns=features, index=X_train.index)
+
+        # ---------------------------------------------------------
+        # ENTRENAMIENTO LDA
+        # ---------------------------------------------------------
+        n_classes = len(y_train.unique())
+        n_features = X_train.shape[1]
         
-        # Puntos Extant
-        ax.scatter(subset["LD1"], subset["LD2"], label=f"{target} (Extant)", 
-                   color=colors[i], alpha=0.6, s=30)
+        # Validar componentes
+        n_components = min(2, n_classes - 1, n_features)
+        if n_components < 2:
+            print(f"⚠️ {filename}: No se pueden generar 2 dimensiones (Clases={n_classes}, Features={n_features}).")
+            return
+
+        lda = LinearDiscriminantAnalysis(n_components=n_components)
+        X_lda_train = lda.fit_transform(X_train, y_train)
         
-        # Elipse de confianza (Standard Deviation)
-        try:
-            draw_ellipse(subset["LD1"], subset["LD2"], ax, n_std=2.0, 
-                         edgecolor=colors[i], facecolor=colors[i], alpha=0.1)
-        except:
-            pass
+        # Proyectar fósiles si existen
+        X_lda_project = None
+        if not X_project.empty:
+            X_lda_project = lda.transform(X_project)
 
-    # B. Graficar EXTINCT (Proyección)
-    # Los pintamos en negro (o gris oscuro) con un marcador diferente ('x' o '^')
-    # para ver dónde caen respecto a las vivas.
-    ax.scatter(df_plot_project["LD1"], df_plot_project["LD2"], 
-               c='black', marker='x', s=50, label='Extinct (Proyectado)', alpha=0.9)
-    
-    # Opcional: Etiquetar los puntos Extinct con su nombre de especie si no son demasiados
-    # for idx, row in df_plot_project.iterrows():
-    #     ax.text(row['LD1'], row['LD2'], row['target'], fontsize=8, alpha=0.7)
+        # ---------------------------------------------------------
+        # VISUALIZACIÓN (TU ESTILO ORIGINAL)
+        # ---------------------------------------------------------
+        fig, ax = plt.subplots(figsize=(12, 9))
 
-    # Info de varianza explicada
-    var_1 = lda.explained_variance_ratio_[0] if len(lda.explained_variance_ratio_) > 0 else 0
-    var_2 = lda.explained_variance_ratio_[1] if len(lda.explained_variance_ratio_) > 1 else 0
-    
-    ax.set_xlabel(f"LD1 ({var_1:.2%} varianza explicada)")
-    ax.set_ylabel(f"LD2 ({var_2:.2%} varianza explicada)")
+        # A. EXTANT (REFERENCIA) - CÍRCULOS + ELIPSES
+        unique_extant = np.unique(y_train)
+        cmap = plt.cm.get_cmap('tab10', len(unique_extant))
 
-else:
-    print("Advertencia: LDA resultó en menos de 2 dimensiones.")
+        for i, specie in enumerate(unique_extant):
+            mask = (y_train == specie).values
+            x_vals = X_lda_train[mask, 0]
+            y_vals = X_lda_train[mask, 1]
+            color = cmap(i)
+            
+            # Puntos
+            ax.scatter(x_vals, y_vals, label=f"{specie}", color=color, alpha=0.6, s=30)
+            
+            # Elipse
+            try:
+                draw_ellipse(x_vals, y_vals, ax, n_std=2.0, edgecolor=color, facecolor=color, alpha=0.1)
+            except:
+                pass
 
-title_suffix = " (Entrenado en Extant -> Proyectado Extinct)"
-ax.set_title(f"Espacio LDA{title_suffix}")
-ax.legend(loc='best', fontsize='small')
-plt.grid(alpha=0.2)
-plt.tight_layout()
+        # B. EXTINCT (PROYECCIÓN) - ESTRELLAS
+        if X_lda_project is not None:
+            unique_project = np.unique(y_project_specie)
+            markers_list = ['*', 'D', 'P', 'X', '^']
+            
+            for i, specie in enumerate(unique_project):
+                mask = (y_project_specie == specie).values
+                # Verificar si hay datos para esa especie
+                if np.sum(mask) > 0:
+                    x_vals = X_lda_project[mask, 0]
+                    y_vals = X_lda_project[mask, 1]
+                    marker = markers_list[i % len(markers_list)]
+                    
+                    ax.scatter(x_vals, y_vals, label=f"{specie} (Fossil)", 
+                               marker=marker, s=120, c='yellow', edgecolors='black', linewidth=1, zorder=10)
 
-plt.savefig("lda_extant_projected.png")
-print("Imagen guardada como 'lda_extant_projected.png'")
+        # C. DETALLES Y GUARDADO
+        var_expl = lda.explained_variance_ratio_
+        ax.set_xlabel(f"LD1 ({var_expl[0]:.2%} var)")
+        ax.set_ylabel(f"LD2 ({var_expl[1]:.2%} var)")
+        ax.set_title(f"LDA: {filename} (Extant Ref vs Project)")
+        
+        ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
+        ax.grid(True, alpha=0.3, linestyle='--')
+        plt.tight_layout()
 
-plt.show()
+        # Guardar con el mismo nombre pero extensión .png
+        output_filename = os.path.splitext(filename)[0] + ".png"
+        output_path = os.path.join(INPUT_DIR, output_filename)
+        
+        plt.savefig(output_path, dpi=300)
+        plt.close() # Importante: cerrar para no mezclar con el siguiente
+        print(f"✅ Gráfico guardado: {output_filename}")
+
+    except Exception as e:
+        print(f"❌ Error crítico procesando {filename}: {e}")
+
+# ==========================================
+# EJECUCIÓN PRINCIPAL
+# ==========================================
+if __name__ == "__main__":
+    if not os.path.exists(INPUT_DIR):
+        print(f"Error: No existe el directorio {INPUT_DIR}")
+    else:
+        files = [f for f in os.listdir(INPUT_DIR) if f.endswith('.csv')]
+        if not files:
+            print("No se encontraron CSVs.")
+        else:
+            print(f"Encontrados {len(files)} archivos. Iniciando...")
+            for f in files:
+                process_file(os.path.join(INPUT_DIR, f))

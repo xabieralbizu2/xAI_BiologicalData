@@ -165,6 +165,47 @@ def feature_importance_mi(df, numeric_cols, target_col):
     plt.tight_layout()
     plt.show()
 
+
+def remove_high_corr_and_plot(df, numeric_cols, threshold=0.9):
+    """
+    Elimina variables con correlación absoluta mayor al threshold y 
+    grafica la matriz de correlación resultante.
+    """
+    print(f"\n--- Eliminación de variables correlacionadas (Th={threshold}) ---")
+    
+    # Filtrar solo columnas presentes
+    valid_cols = [c for c in numeric_cols if c in df.columns]
+    df_num = df[valid_cols]
+    
+    # Calcular matriz de correlación absoluta
+    corr_matrix = df_num.corr().abs()
+    
+    # Seleccionar el triángulo superior de la matriz
+    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+    
+    # Identificar columnas a eliminar (cualquiera que tenga > threshold en el triángulo superior)
+    to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
+    
+    print(f"Variables eliminadas ({len(to_drop)}):")
+    print(to_drop)
+    
+    # Crear DF limpio
+    df_clean = df.drop(columns=to_drop)
+    
+    # Calcular nueva matriz de correlación para graficar
+    # (Usamos las columnas numéricas que quedaron)
+    remaining_cols = [c for c in valid_cols if c not in to_drop]
+    new_corr = df_clean[remaining_cols].corr()
+    
+    # Plotear Heatmap
+    plt.figure(figsize=(12, 10))
+    sns.heatmap(new_corr, cmap='RdBu_r', center=0, square=True, vmax=1, vmin=-1)
+    plt.title(f"Matriz de Correlación tras limpiar (Th={threshold})\nVariables restantes: {len(remaining_cols)}")
+    plt.tight_layout()
+    plt.show()
+    
+    return df_clean
+
 # ---------------------------------------------------------
 # MAIN
 # ---------------------------------------------------------
@@ -244,5 +285,8 @@ if __name__ == "__main__":
         # E. Importancia de Variables
         print("\n>>> E. Variables Discriminantes (Mutual Info)")
         feature_importance_mi(df_extinct, full_features, TARGET_COL)
+
+        print("\n>>> F. Limpieza de Correlaciones y Heatmap Final")
+        df_clean = remove_high_corr_and_plot(df, full_features, threshold=0.95)
 
     print("\n✅ Script finalizado exitosamente.")
