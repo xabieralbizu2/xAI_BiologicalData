@@ -1,0 +1,377 @@
+
+================================================================================
+CONCLUSIONES — DISTRIBUCIONES A POSTERIORI Y CURVAS DE PROBABILIDAD
+Bayesian Logistic Regression · Prior Laplace vs. Prior Horseshoe
+================================================================================
+
+
+────────────────────────────────────────────────────────────────────────────────
+PRIOR LAPLACE — DISTRIBUCIONES A POSTERIORI
+────────────────────────────────────────────────────────────────────────────────
+
+1. CONTRACCIÓN UNIFORME HACIA CERO
+   El prior Laplace contrae el ~88% de los coeficientes a valores próximos
+   a β=0. Las distribuciones presentan picos de densidad muy agudos (4–5)
+   con rango efectivo ±1. Esta penalización L1 es uniforme: no distingue
+   entre variables informativas e irrelevantes, eliminando señal diagnóstica
+   real junto con el ruido.
+
+2. DIAGNÓSTICO LOO ÓPTIMO, CLASIFICACIÓN POBRE
+   El diagnóstico bayesiano es correcto: ELPD-LOO = −225,38, p_loo = 47,98
+   y 100% de valores Pareto-k < 0,70. Sin embargo, la accuracy global es
+   solo 0,47 y F1 = 0,00 para Cercocebus atys. La regularización es
+   demasiado agresiva para este problema.
+
+3. VARIABLES CON SEÑAL RESIDUAL REAL
+   Las distribuciones que NO colapsan completamente revelan señal genuina:
+
+   · Shrnx — la más excepcional: distribución bimodal real con dos lóbulos
+     casi separados (Lophocebus negativo / Theropithecus positivo). El prior
+     Laplace no consigue contraerla, indicando que su señal supera
+     claramente el umbral de ruido morfológico.
+
+   · epLsar — cola positiva muy pronunciada para Theropithecus (β ≈ +0,7)
+     y pico de densidad ~3,8, el más bajo del bloque fractal. La señal
+     de anisotropía oclusal persiste bajo L1 fuerte.
+
+   · Sdffq — cola derecha de Lophocebus β ≈ +0,8. Mayor asimetría del
+     grupo de densidad de features.
+
+   · HAsfc81 — pico ~3,8, Theropithecus positivo / Cercocebus negativo.
+     Mayor señal del bloque fractal después de epLsar.
+
+   · Smrk1 — única variable ISO básica con tres especies diferenciadas
+     simultáneamente: Lophocebus+ / Macaca− / Cercocebus−.
+
+   · Ssk — cola izquierda exclusiva de Macaca (β ≈ −0,5 a −0,7).
+
+   · Vvv — lóbulo positivo de Cercocebus (β ≈ +0,3 a +0,5), pico ~3,5.
+
+   · FLTt / FLTp — dispersión multi-especie simultánea: único caso donde
+     varias especies muestran colas en direcciones distintas a la vez.
+
+4. PATRÓN THEROPITHECUS / LOPHOCEBUS
+   El hallazgo transversal más robusto: en Shrnx, Shvx, Sdffq, Sdarx y
+   Sdrnq, Theropithecus y Lophocebus presentan coeficientes de signo
+   opuesto de forma consistente. Estos dos géneros ocupan los extremos
+   del gradiente morfológico oclusal del dataset.
+
+5. CERCOCEBUS ATYS — SEÑAL DISPERSA
+   Su señal es real pero débil y fragmentada entre pocas variables (Vvv,
+   Shffx, Sku). El prior Laplace nunca le asigna coeficientes suficientes
+   para generar probabilidades diagnósticas. Causa directa: n = 11
+   especímenes, insuficiente para estimar coeficientes robustos.
+
+
+────────────────────────────────────────────────────────────────────────────────
+PRIOR LAPLACE — CURVAS DE PROBABILIDAD
+────────────────────────────────────────────────────────────────────────────────
+
+6. ABANICO PLANO EN EL 88% DE LAS VARIABLES
+   Las curvas de todas las especies se mantienen en la franja 0,10–0,25
+   con pendientes cercanas a cero en todo el rango estandarizado [−3, +3].
+   Bandas de credibilidad estrechas (~±0,03). Consecuencia directa de los
+   coeficientes colapsados hacia cero.
+
+7. VARIABLES CON PENDIENTE APRECIABLE
+   Solo las variables con señal residual en las distribuciones a posteriori
+   generan curvas con pendiente visible, confirmando la coherencia interna
+   del modelo:
+
+   · Sdffq — mayor amplitud de abanico del análisis (~0,20). Lophocebus
+     alcanza P ≈ 0,32 en valores positivos altos. Theropithecus cruza
+     hacia abajo. Es la curva de probabilidad más discriminante.
+
+   · Shrnx — amplitud ~0,18. Theropithecus alcanza P ≈ 0,30.
+     Lophocebus baja a P ≈ 0,08 en los mismos valores.
+
+   · FLTt — amplitud ~0,18. Única variable donde las bandas de credibilidad
+     son anchas para todas las especies simultáneamente.
+
+   · epLsar — amplitud ~0,15. Theropithecus alcanza P ≈ 0,30–0,35.
+
+   · HAsfc81 — amplitud ~0,14. Theropithecus sube / Cercocebus baja.
+
+8. ROL DE CADA ESPECIE EN LAS CURVAS
+   · Theropithecus gelada: curva más alta y de mayor pendiente positiva.
+     Alcanza P = 0,30–0,38 en las variables clave.
+   · Lophocebus aterrimus: mayor pendiente negativa, inversa a Theropithecus.
+   · Cercocebus atys: curva más baja del abanico (P ≈ 0,05–0,10).
+     Explica directamente el F1 = 0,00 en clasificación.
+   · Papio spp.: tres curvas próximas en franja 0,10–0,18. Distinción
+     intra-género prácticamente nula.
+   · Macaca sylvanus: pendiente negativa en Ssk y Sal (s=0,2).
+
+
+────────────────────────────────────────────────────────────────────────────────
+PRIOR HORSESHOE — DISTRIBUCIONES A POSTERIORI
+────────────────────────────────────────────────────────────────────────────────
+
+9. CONTRACCIÓN AÚN MÁS AGRESIVA QUE LAPLACE EN LA MAYORÍA DE VARIABLES
+   Contrariamente a lo que cabría esperar del shrinkage selectivo, el prior
+   Horseshoe produce distribuciones a posteriori con picos de densidad
+   iguales o superiores a los del Laplace (~5) en la mayoría de variables.
+   El rango efectivo es comparable (±1 o incluso menor). Esto se debe a que
+   el modelo jerárquico concentra la información en los niveles superiores,
+   haciendo que los coeficientes individuales necesiten menos masa posterior
+   fuera de cero para explicar los datos.
+
+10. VARIABLES CON SEPARACIÓN INTER-ESPECIE VISIBLE EN HORSESHOE
+    A pesar de la contracción general, el Horseshoe SÍ muestra distribuciones
+    diferenciadas entre especies en un subconjunto concreto de variables:
+
+    · Smrk1 *** LA MÁS RESEÑABLE ***
+      La distribución de Macaca (verde) aparece claramente desplazada a
+      positivo (+1 a +1,5), separada del resto de especies que colapsan
+      en 0. Es la variable ISO básica donde el Horseshoe libera con más
+      claridad un coeficiente individual. Coherente con la mejora de
+      Macaca en clasificación (F1: 0,35 → 0,67).
+
+    · Sku
+      La distribución de P. hamadryas (azul claro) muestra un lóbulo
+      a la izquierda claramente separado (β ≈ −1,5), mientras el resto
+      colapsa. El Horseshoe libera el coeficiente negativo de hamadryas
+      que el Laplace no podía mantener.
+
+    · Sdffq
+      Cola derecha pronunciada exclusiva de Lophocebus (ámbar), que
+      alcanza β ≈ +1,5. Pico central en 0 para el resto. El Horseshoe
+      libera específicamente el coeficiente de Lophocebus en densidad
+      de features angulares.
+
+    · Maximum depth of furrows
+      Distribución claramente bimodal: un grupo de especies hacia negativo
+      (β ≈ −1 a −2) y otro hacia positivo. La profundidad máxima de surcos
+      con poda es una de las variables donde el Horseshoe muestra la
+      separación más marcada entre grupos de especies.
+
+    · Mean depth of furrows
+      Similar a maximum depth pero con mayor amplitud. Theropithecus
+      desplazado a positivo, resto en negativo o cero.
+
+    · Fractal complexity (Lsfc)
+      La distribución de Theropithecus (verde oscuro) se separa claramente
+      a la derecha, con cola positiva hasta β ≈ +1. Resto colapsa en 0.
+
+    · Fractal dimension (Dls)
+      El pico se desplaza a positivo exclusivamente para una especie
+      (verde/Theropithecus). Separación nítida respecto al resto.
+
+    · SRC threshold.1 (Smooth-rough crossover)
+      Distribución marcadamente asimétrica: rango extendido hasta +10/+15,
+      con cola derecha larga para varias especies. Es la variable con el
+      rango posterior más amplio del bloque fractal en Horseshoe.
+
+    · MeanAsfc
+      Cola izquierda pronunciada (β ≈ −0,5) para Lophocebus y una especie
+      adicional. El resto en positivo o cero. Separación bipartita clara.
+
+    · Ssk
+      La distribución de Macaca (verde claro) presenta cola izquierda
+      visible (β ≈ −0,5), similar al patrón Laplace pero con mayor amplitud
+      relativa al pico. El Horseshoe mantiene esta señal.
+
+11. VARIABLES DONDE HORSESHOE COLAPSA MÁS QUE LAPLACE
+    En variables como Sv, Sz, Sa, Spd, S10z, HAsfc81, epLsar, FLTt y
+    NewEplsar, el pico Horseshoe es más estrecho y puntiagudo que en
+    Laplace, con densidades superiores a 5 y rangos efectivos menores a
+    ±0,5. El modelo jerárquico decide que estas variables no aportan
+    información al nivel individual de los coeficientes y las contrae
+    completamente, delegando su información a los niveles superiores del
+    modelo jerárquico.
+
+    Esto es especialmente llamativo para epLsar y HAsfc81: variables que
+    en Laplace mostraban cola positiva robusta para Theropithecus, en
+    Horseshoe colapsan casi por completo. La información de anisotropía
+    fractal se procesa a nivel jerárquico de grupo, no a nivel de coeficiente
+    individual.
+
+12. PATRÓN GLOBAL: BIMODALIDAD SELECTIVA
+    El rasgo más distintivo de las distribuciones Horseshoe respecto a
+    las Laplace es que, cuando una variable tiene señal, ésta se manifiesta
+    como separación limpia de UNA sola especie del pico central, no como
+    desplazamiento difuso de varias. El Horseshoe asigna toda la masa
+    posterior a la especie informativa y colapsa el resto completamente.
+    Esto produce distribuciones con forma de "pico central + lóbulo
+    lateral" en lugar de las colas suaves del Laplace.
+
+
+────────────────────────────────────────────────────────────────────────────────
+PRIOR HORSESHOE — CURVAS DE PROBABILIDAD
+────────────────────────────────────────────────────────────────────────────────
+
+13. BANDAS DE CREDIBILIDAD MÁS AMPLIAS QUE EN LAPLACE
+    La diferencia visual más inmediata respecto a las curvas Laplace es que
+    las bandas de credibilidad del Horseshoe son sistemáticamente más anchas,
+    llegando a 0,00–0,35 en las variables más informativas. El modelo tiene
+    mayor incertidumbre sobre los efectos marginales pero concentra esa
+    incertidumbre en las especies y variables relevantes.
+
+14. THEROPITHECUS — CURVA CONSISTENTEMENTE MÁS ALTA
+    En prácticamente toda la galería, Theropithecus gelada (verde oscuro)
+    mantiene la curva de probabilidad más alta del abanico, en el rango
+    0,20–0,25. Esta posición superior es más estable y menos pendiente que
+    en Laplace: el Horseshoe le asigna una probabilidad base mayor gracias
+    a la información acumulada en el nivel jerárquico de grupos.
+
+15. VARIABLES CON MAYOR AMPLITUD DE ABANICO EN HORSESHOE
+    Las curvas con mayor separación inter-especie son:
+
+    · Sdffq *** LA MÁS DISCRIMINANTE DEL ANÁLISIS EN HORSESHOE ***
+      Lophocebus (ámbar) presenta una curva con pendiente positiva muy
+      marcada que alcanza P ≈ 0,70–0,75 en los valores positivos altos,
+      con una banda de credibilidad que ocupa casi todo el rango [0, 1].
+      Es la única curva de todo el análisis que supera P = 0,5. Esto
+      supone un cambio cualitativo respecto al Laplace (donde Lophocebus
+      solo alcanzaba ~0,32): el Horseshoe ha liberado completamente el
+      coeficiente de Lophocebus en esta variable.
+
+    · Maximum depth of furrows
+      Cercocebus (rosa) muestra una banda de credibilidad que ocupa
+      todo el rango [0, 0,8] en los valores negativos extremos. La
+      amplitud del abanico supera 0,6, la mayor del bloque de surcos.
+      El modelo es muy incierto sobre el efecto de esta variable para
+      Cercocebus pero apunta a que valores bajos de profundidad máxima
+      de surcos predicen fuertemente esta especie.
+
+    · Mean depth of furrows
+      Similar a maximum depth pero con Theropithecus mostrando la
+      pendiente positiva más clara: alcanza P ≈ 0,40–0,45 en valores
+      altos. Banda de credibilidad muy amplia.
+
+    · Fractal complexity (Lsfc)
+      Lophocebus (ámbar) y Cercocebus (rosa) presentan curvas con
+      pendientes opuestas y bandas muy anchas. La complejidad fractal
+      Lsfc separa estos dos taxones en el modelo Horseshoe de forma más
+      evidente que en Laplace.
+
+    · Fractal dimension (Dls)
+      Theropithecus con pendiente positiva visible y banda amplia.
+
+    · SRC threshold.1
+      Cercocebus con banda de credibilidad que alcanza P ≈ 0,80 en
+      valores negativos. La mayor amplitud de todo el bloque fractal.
+
+    · MadAsfc
+      Pendientes visibles para Theropithecus (positivo) y Lophocebus
+      (negativo). Amplitud abanico ~0,20.
+
+16. VARIABLES CON ABANICO PLANO EN HORSESHOE
+    epLsar, HAsfc81, NewEplsar, Shrnx, FLTt: variables que en Laplace
+    mostraban las curvas más discriminantes, en Horseshoe presentan
+    abanicos prácticamente planos con bandas estrechas. La información
+    que estas variables aportaban se ha absorbido en el nivel jerárquico
+    y no se traduce en pendientes marginales individuales. Esto NO
+    significa que estas variables sean irrelevantes en el modelo
+    Horseshoe, sino que su efecto se captura de forma diferente.
+
+17. CERCOCEBUS ATYS — RECUPERACIÓN PARCIAL
+    A diferencia del Laplace (donde Cercocebus era sistemáticamente la
+    curva más baja), en el Horseshoe aparece con bandas de credibilidad
+    amplias en variables como Maximum depth of furrows y SRC threshold.1.
+    El modelo Horseshoe tiene mayor incertidumbre sobre Cercocebus —no
+    la ha descartado— pero no consigue asignarle probabilidades centrales
+    altas por la escasez de datos (n=11).
+
+18. PATRÓN GLOBAL DE LAS CURVAS HORSESHOE
+    El Horseshoe produce curvas con:
+    a) Theropithecus como especie con mayor probabilidad base (~0,20–0,22)
+       en prácticamente toda la galería.
+    b) Lophocebus como segunda especie más alta (~0,18–0,20).
+    c) Papio spp. y Macaca en la franja media (0,10–0,18).
+    d) Cercocebus con alta incertidumbre (banda ancha) en variables
+       de surcos y fractal, pero curva central baja (~0,10).
+    e) En las variables más informativas, UNA especie tiene pendiente
+       marcada y el resto permanece plano, en contraste con el Laplace
+       donde las pendientes eran más graduales y difusas.
+
+
+────────────────────────────────────────────────────────────────────────────────
+COMPARACIÓN DIRECTA LAPLACE vs. HORSESHOE
+────────────────────────────────────────────────────────────────────────────────
+
+19. DIFERENCIAS EN LAS DISTRIBUCIONES A POSTERIORI
+
+    Variable       Laplace                        Horseshoe
+    ─────────────────────────────────────────────────────────────────────
+    Smrk1          3 especies diferenciadas,       Macaca lóbulo +1,5 nítido,
+                   dispersión ~±0,4               resto colapso total
+    Sku            Cola Cercocebus positiva        P. hamadryas lóbulo −1,5,
+                                                   patrón opuesto
+    epLsar         Cola Thero. +0,7 pronunciada    Colapso casi total (absorbido
+                                                   en nivel jerárquico)
+    HAsfc81        Pico ~3,8, Thero.+/Cerco.−     Colapso fuerte, sin separación
+    Sdffq          Cola Lopho. +0,8               Cola Lopho. +1,5, más intensa
+    Shrnx          Bimodalidad residual             Pico único en 0, sin bimodal
+    Max. depth     Señal leve                      Bimodalidad marcada Cerco.
+    FLTt           Dispersión multi-especie        Colapso, info. en nivel grupo
+    Ssk            Cola Macaca −0,5               Cola Macaca similar, confirmada
+
+20. DIFERENCIAS EN LAS CURVAS DE PROBABILIDAD
+
+    Variable       Laplace (amplitud/max P)       Horseshoe (amplitud/max P)
+    ─────────────────────────────────────────────────────────────────────
+    Sdffq          ~0,20 / P_max ≈ 0,32           ~0,60+ / P_max ≈ 0,75 (***)
+    epLsar         ~0,15 / P_max ≈ 0,35           ~0,10 / plano
+    HAsfc81        ~0,14 / P_max ≈ 0,30           ~0,12 / plano
+    Shrnx          ~0,18 / P_max ≈ 0,30           ~0,12 / casi plano
+    Max. depth     ~0,12 / plano                  ~0,60+ / P_max ≈ 0,80 (***)
+    FLTt           ~0,18 / multi-especie           ~0,15 / plano
+    Ssk            ~0,10 / pendiente Macaca        ~0,15 / pendiente Macaca
+
+    (***) = cambio cualitativo entre modelos: pasa de curva plana a curva
+    con pendiente extrema y band amplísima.
+
+21. CONCLUSIÓN COMPARATIVA
+    Los dos priors identifican señal diagnóstica en el mismo dataset pero
+    la distribuyen de forma cualitativamente diferente:
+
+    · El Laplace produce señal difusa en muchas variables con colas suaves,
+      curvas de probabilidad con pendientes moderadas y amplio reparto de
+      la información entre variables.
+
+    · El Horseshoe concentra la señal en pocas variables con separaciones
+      más nítidas (lóbulos bien definidos), curvas de probabilidad con
+      pendientes extremas en esas variables y colapso total en el resto.
+      La información de variables como epLsar y HAsfc81 no desaparece
+      sino que se procesa en el nivel jerárquico de grupos y no es visible
+      en los coeficientes individuales.
+
+    · La variable más discriminante cambia entre modelos:
+      en Laplace es Sdffq (Lophocebus, pendiente moderada),
+      en Horseshoe también es Sdffq pero con un efecto cualitativamente
+      mayor (P ≈ 0,75, el único caso que supera 0,5 en todo el análisis).
+
+    · Maximum depth of furrows es la variable que más gana relevancia
+      en el Horseshoe respecto al Laplace: pasa de señal marginal a una
+      de las curvas con mayor amplitud del análisis.
+
+
+────────────────────────────────────────────────────────────────────────────────
+CONCLUSIÓN GLOBAL
+────────────────────────────────────────────────────────────────────────────────
+
+22. El prior Laplace produce el mejor diagnóstico LOO del modelo simple
+    (k-hat 100% buenos, p_loo razonable), pero su contracción uniforme
+    elimina señal diagnóstica real, resultando en clasificación pobre.
+
+23. Las distribuciones a posteriori del Laplace actúan como mapa de la
+    señal disponible: donde no colapsan completamente está la información
+    que el Horseshoe puede aprovechar. Sin embargo, el Horseshoe no
+    siempre la procesa a nivel de coeficiente individual: en variables
+    como epLsar o HAsfc81, la señal se absorbe en el nivel jerárquico.
+
+24. El prior Horseshoe muestra distribuciones con contracción igual o
+    mayor en la mayoría de variables, pero con separaciones más nítidas
+    y selectivas en el subconjunto informativo. El patrón característico
+    es "pico central + lóbulo lateral de una sola especie" en lugar de
+    las colas difusas del Laplace.
+
+25. Las curvas de probabilidad del Horseshoe confirman la selectividad:
+    Sdffq es la única variable donde cualquier especie supera P = 0,5
+    (Lophocebus alcanza ~0,75), mientras que Maximum depth of furrows
+    y SRC threshold.1 emergen como variables diagnósticas que el Laplace
+    no destacaba. La distribución de la información diagnóstica entre
+    variables es cualitativamente distinta en ambos priors.
+
+================================================================================
