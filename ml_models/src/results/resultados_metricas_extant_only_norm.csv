@@ -1,7 +1,0 @@
-Modelo,CV_Accuracy_Train,Test_Accuracy,Test_F1_Weighted,Test_Precision,Test_Recall,Best_Params
-Decision Tree YJ,0.2296,0.2647,0.2139,0.1976,0.2647,"{'criterion': 'gini', 'max_depth': None, 'min_samples_leaf': 3, 'min_samples_split': 10}"
-MLP Neural Net S YJ,0.1926,0.2059,0.1863,0.1765,0.2059,"{'activation': 'relu', 'alpha': 0.2, 'hidden_layer_sizes': (5,), 'learning_rate': 'constant', 'solver': 'adam'}"
-Naive Bayes YJ,0.1556,0.2059,0.1669,0.1957,0.2059,{'var_smoothing': 0.03853528593710529}
-LDA S YJ,0.1926,0.1471,0.1365,0.1527,0.1471,"{'shrinkage': 'auto', 'solver': 'lsqr'}"
-XGBoost YJ,0.1778,0.1176,0.0851,0.0801,0.1176,"{'gamma': 0.001, 'learning_rate': 0.001, 'max_depth': 3, 'min_child_weight': 1}"
-Logistic Regression S YJ,0.2074,0.0882,0.0693,0.06,0.0882,"{'C': 0.01, 'multi_class': 'multinomial', 'penalty': 'l2', 'solver': 'lbfgs'}"

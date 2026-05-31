@@ -1,0 +1,34 @@
+LATENT STRUCTURE DISCOVERY — chuleta presentación
+===================================================
+
+MÉTRICAS
+  ARI: ¿los clusters coinciden con las especies reales? (0=azar, 1=perfecto)
+  NMI: ¿cuánta info sobre la especie da saber el cluster? (0=nada, 1=todo)
+
+POR QUÉ BHC Y NO DP
+  DP:  ARI=-0.00  NMI=0.11  → no supera el azar
+  BHC: ARI=0.58   NMI=0.85  → recupera la estructura biológica real
+  El DP mete el 82% de los datos en un componente — el espacio latente
+  es continuo, no tiene 7 clusters esféricos. Alpha no cambia nada
+  (probado de 0.01 a 5.0, resultado idéntico).
+  El BHC trabaja con gaussianas por especie → sí discrimina.
+
+CONCLUSIONES BHC
+
+  1. Recupera la filogenia sin supervisión (NMI=0.85)
+       Papio anubis ↔ P. hamadryas  (dist 0.21, los más similares)
+       + P. ursinus                  (dist 0.50) → clado Papio
+       Cercocebus ↔ Lophocebus      (dist 0.63) → mangabeidos
+       + Macaca                      (dist 0.75)
+       Theropithecus gelada          (dist 1.52) → completamente separado
+
+  2. Fósiles
+       P. lothagamensis  → clado Papio (3/4). El más homogéneo (std 0.30).
+       P. ado            → clado Papio (3/4).
+       Parapapio         → disperso. 43996: dist=0.35 (más claro del proyecto).
+       Cercopithecoide   → sin asignación clara, cada espécimen en cluster distinto.
+       T. oswaldi        → NO converge a T. gelada. Disperso en 4 clusters.
+                           613_TO: dist=2.52, outlier más extremo del proyecto.
+
+  3. Robustez: 11/35 fósiles asignados igual por BHC y DP → los más seguros.
+               24/35 ambiguos → morfología intermedia entre grupos.

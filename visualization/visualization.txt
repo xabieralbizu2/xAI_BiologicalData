@@ -1,4 +1,0 @@
-Methods that propose a visual solution for separating data (supervised and unsupervised). 
-
-src: datasets used for training the models and generating the images
-lda: LD1 and LD2 separation norm->normalized dataset, nnorm->not notmalized dataset, all->using all vars, nall->deleting redundant vars

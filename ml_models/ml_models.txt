@@ -1,5 +1,0 @@
-this folder executes various classical ML algorithms to the datasets.
-*Preprocessing includes deleting redundant variables
-
-src: includes all datasets used for obtaining results
-src/results: includes metrics and hiperparams. obtained for dataset determined by the names. S: standarized, YJ: normalized using Yeo-Johnson

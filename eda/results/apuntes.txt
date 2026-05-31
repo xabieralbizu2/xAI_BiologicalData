@@ -1,0 +1,18 @@
+entrenar modelos extant, extinct:
+
+pca -> cambio de dirs
+gmm -> entrenar modelo extinct y compararlo con el actual y sobre data_norm
+
+https://mc-stan.org/loo/reference/elpd.html 
+
+sacar conclusiones si el comportamiento es parecido
+
+
+
+ultima prueba sin vars categoricas pca y gmm
+
+si son diferentes:
+    -modelos jerarquicos
+
+
+alguno de los grupos extinct es parecido a alguno de los extant?

@@ -1,0 +1,108 @@
+Variable,Distancia_EMD
+Sak2,0.4413
+Vvv (p = 80%),0.4152
+Svk,0.4118
+Sded (Pruning = 5% of Sz),0.3985
+Sq,0.3967
+Sz,0.3937
+Shrnq (Pruning = 5% of Sz),0.3937
+Sda (Pruning = 5% of Sz),0.3907
+"Sdc (p = 10%, q = 90%)",0.389
+Sa,0.3842
+"Vmc (p = 10%, q = 80%)",0.3731
+Mean density of furrows,0.3706
+Sdd (Pruning = 5% of Sz),0.3645
+S10z (Pruning = 5% of Sz),0.3639
+Sv,0.3581
+S5p (Pruning = 5% of Sz),0.3369
+S5v (Pruning = 5% of Sz),0.3366
+Vv (p = 10%),0.3342
+Smc (p = 10%),0.3337
+Sharx (Pruning = 5% of Sz),0.3321
+Sp,0.3298
+Sk,0.3265
+Median of Asfc (MedianAsfc),0.3254
+Maximum depth of furrows,0.3214
+"Vvc (p = 10%, q = 80%)",0.3168
+Smr (c = 1 µm below highest peak),0.3154
+Shffq (Pruning = 5% of Sz),0.312
+Spc (Pruning = 5% of Sz),0.3115
+Scale of max complexity (Smfc),0.3112
+Fractal dimension (Dls),0.311
+Std (Reference angle = 0°),0.3109
+Fractal dimension (Das),0.3063
+Mean depth of furrows,0.3052
+Sdn (Pruning = 5% of Sz),0.3022
+Sddx (Pruning = 5% of Sz),0.3017
+Sdffq (Pruning = 5% of Sz),0.2978
+Shh (Pruning = 5% of Sz),0.2975
+Shv (Pruning = 5% of Sz),0.2954
+Svc (Pruning = 5% of Sz),0.2944
+Svd (Pruning = 5% of Sz),0.2943
+Shrnx (Pruning = 5% of Sz),0.2898
+SRC threshold,0.2865
+Svkx,0.2849
+Sdaq (Pruning = 5% of Sz),0.2835
+Sdax (Pruning = 5% of Sz),0.2833
+Sdffx (Pruning = 5% of Sz),0.2825
+Sdedx (Pruning = 5% of Sz),0.2814
+Smooth-rough crossover (SRC),0.2771
+Fractal complexity (Asfc),0.2765
+Fractal complexity (Lsfc),0.2758
+Sddq (Pruning = 5% of Sz),0.2754
+Sdrn (Pruning = 5% of Sz),0.2731
+Median absolute deviation of Asfc (MadAsfc),0.2693
+Smooth-rough crossover (SRC).1,0.2687
+Smrk1,0.2646
+Shn (Pruning = 5% of Sz),0.2644
+Sdq,0.2638
+Sdedq (Pruning = 5% of Sz),0.2628
+Spd (Pruning = 5% of Sz),0.2623
+Shhx (Pruning = 5% of Sz),0.2606
+Length-scale anisotropy (NewEplsar),0.2598
+Smrk2,0.2579
+Sharq (Pruning = 5% of Sz),0.2559
+Spkx,0.2549
+Scale of max R² (Smr2),0.2548
+Shed (Pruning = 5% of Sz),0.2515
+Sdr,0.2507
+Shvq (Pruning = 5% of Sz),0.249
+Sha (Pruning = 5% of Sz),0.247
+Sdrnx (Pruning = 5% of Sz),0.2455
+Vmp (p = 10%),0.2443
+Vm (p = 10%),0.2443
+Sdv (Pruning = 5% of Sz),0.244
+Ssk,0.2424
+Sdrnq (Pruning = 5% of Sz),0.237
+Spk,0.2361
+Shff (Pruning = 5% of Sz),0.2348
+Mean of Asfc (MeanAsfc),0.2321
+Sdvx (Pruning = 5% of Sz),0.2311
+Sku,0.2311
+Shffx (Pruning = 5% of Sz),0.2149
+Shvx (Pruning = 5% of Sz),0.211
+Sdarq (Pruning = 5% of Sz),0.2067
+Shhq (Pruning = 5% of Sz),0.2062
+HAsfc81 (HAsfc81),0.1964
+Reg. coefficient R²,0.1958
+Sak1,0.1946
+Length-scale anisotropy (Sfrax) (epLsar),0.1921
+Sdvq (Pruning = 5% of Sz),0.1918
+Scale of max complexity (Smfc).1,0.1826
+Reg. coefficient R².1,0.1811
+Shar (Pruning = 5% of Sz),0.181
+Scale of max R² (Smr2).1,0.1788
+Sdar (Pruning = 5% of Sz),0.1748
+Shrn (Pruning = 5% of Sz),0.1725
+Sdff (Pruning = 5% of Sz),0.172
+Sdarx (Pruning = 5% of Sz),0.1715
+FLTt,0.1624
+FLTp,0.1621
+FLTq,0.1611
+FLTv,0.1583
+SRC threshold.1,0.1558
+Sal (s = 0.2),0.154
+Shaq (Pruning = 5% of Sz),0.1512
+Shedq (Pruning = 5% of Sz),0.1333
+Shax (Pruning = 5% of Sz),0.1044
+Shedx (Pruning = 5% of Sz),0.1033

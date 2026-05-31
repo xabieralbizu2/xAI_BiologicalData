@@ -1,298 +1,222 @@
 import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-from scipy.stats import normaltest
 import numpy as np
-from sklearn.preprocessing import StandardScaler, PowerTransformer, LabelEncoder
-from sklearn.model_selection import train_test_split, LeaveOneOut, GridSearchCV, StratifiedKFold
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings  
+
+# Herramientas de Scikit-Learn
+from sklearn.model_selection import cross_val_score, LeaveOneOut, cross_val_predict, GridSearchCV, StratifiedKFold, KFold
+from sklearn.metrics import confusion_matrix, balanced_accuracy_score, classification_report, f1_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.neural_network import MLPClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.metrics import accuracy_score, classification_report, f1_score, precision_score, recall_score
-import xgboost as xgb
-import os
+from sklearn.exceptions import ConvergenceWarning 
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
-# Parametros por defecto
+# Configuración de Warnings
+warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# =========================================================
+# 1. CARGA DE DATOS Y TARGET ÚNICO (ESPECIE)
+# =========================================================
+file_path = "src/dataset_con_grupos.csv" # Tu archivo
+
 try:
-    from src.model_params import (
-        param_grid_dt, param_grid_logreg, param_grid_mlp, 
-        param_grid_nb, param_grid_lda, param_grid_xgb
-    )
-except ImportError:
-    print("⚠️ No se encontró 'src.model_params'. Usando grids por defecto.")
-    param_grid_dt = {'max_depth': [3, 5, 10], 'criterion': ['gini', 'entropy']}
-    param_grid_logreg = {'C': [0.1, 1, 10]}
-    param_grid_mlp = {'hidden_layer_sizes': [(50,), (100,)], 'alpha': [0.0001, 0.001]}
-    param_grid_nb = {'var_smoothing': [1e-9, 1e-8]}
-    param_grid_lda = {'solver': ['svd', 'lsqr']}
-    param_grid_xgb = {'n_estimators': [50, 100], 'learning_rate': [0.01, 0.1]}
+    df = pd.read_csv(file_path)
+    print(f"✅ Datos cargados: {df.shape}")
+except FileNotFoundError as e:
+    print(f"❌ Error: {e}")
+    exit()
 
-# ---------------------------------------------------------
-# 1. LISTAS DE VARIABLES (Nombres EXACTOS)
-# ---------------------------------------------------------
-ISO_VARS = [
-    'Sq', 'Ssk', 'Sku', 'Sp', 'Sv', 'Sz', 'Sa', 
-    'Sal (s = 0.2)', 'Std (Reference angle = 0°)', 'Sdq', 'Sdr', 
-    'Smr (c = 1 µm below highest peak)', 'Smc (p = 10%)', 'Sdc (p = 10%, q = 90%)', 
-    'Vm (p = 10%)', 'Vv (p = 10%)', 'Vmp (p = 10%)', 'Vmc (p = 10%, q = 80%)', 
-    'Vvc (p = 10%, q = 80%)', 'Vvv (p = 80%)', 'Sk', 'Spk', 'Svk', 
-    'Smrk1', 'Smrk2', 'Sak1', 'Sak2', 'Spkx', 'Svkx', 
-    'Spd (Pruning = 5% of Sz)', 'Spc (Pruning = 5% of Sz)', 'Sda (Pruning = 5% of Sz)', 
-    'Sha (Pruning = 5% of Sz)', 'Sdv (Pruning = 5% of Sz)', 'Shv (Pruning = 5% of Sz)', 
-    'Svd (Pruning = 5% of Sz)', 'Svc (Pruning = 5% of Sz)', 'Shh (Pruning = 5% of Sz)', 
-    'Shhx (Pruning = 5% of Sz)', 'Shhq (Pruning = 5% of Sz)', 'Shax (Pruning = 5% of Sz)', 
-    'Shaq (Pruning = 5% of Sz)', 'Shvx (Pruning = 5% of Sz)', 'Shvq (Pruning = 5% of Sz)', 
-    'Sdd (Pruning = 5% of Sz)', 'Sddx (Pruning = 5% of Sz)', 'Sddq (Pruning = 5% of Sz)', 
-    'Sdax (Pruning = 5% of Sz)', 'Sdaq (Pruning = 5% of Sz)', 'Sdvx (Pruning = 5% of Sz)', 
-    'Sdvq (Pruning = 5% of Sz)', 'Shn (Pruning = 5% of Sz)', 'Sdn (Pruning = 5% of Sz)', 
-    'Shrn (Pruning = 5% of Sz)', 'Shrnx (Pruning = 5% of Sz)', 'Shrnq (Pruning = 5% of Sz)', 
-    'Shff (Pruning = 5% of Sz)', 'Shffx (Pruning = 5% of Sz)', 'Shffq (Pruning = 5% of Sz)', 
-    'Shed (Pruning = 5% of Sz)', 'Shedx (Pruning = 5% of Sz)', 'Shedq (Pruning = 5% of Sz)', 
-    'Shar (Pruning = 5% of Sz)', 'Sharx (Pruning = 5% of Sz)', 'Sharq (Pruning = 5% of Sz)', 
-    'Sdrn (Pruning = 5% of Sz)', 'Sdrnx (Pruning = 5% of Sz)', 'Sdrnq (Pruning = 5% of Sz)', 
-    'Sdff (Pruning = 5% of Sz)', 'Sdffx (Pruning = 5% of Sz)', 'Sdffq (Pruning = 5% of Sz)', 
-    'Sded (Pruning = 5% of Sz)', 'Sdedx (Pruning = 5% of Sz)', 'Sdedq (Pruning = 5% of Sz)', 
-    'Sdar (Pruning = 5% of Sz)', 'Sdarx (Pruning = 5% of Sz)', 'Sdarq (Pruning = 5% of Sz)', 
-    'FLTt', 'FLTp', 'FLTv', 'FLTq'
-]
+metadata_cols = ['Target_Specie', 'Target_group', 'Extant/Extinct ', 'Specimen', 'ID']
+feature_cols = [c for c in df.columns if c not in metadata_cols]
 
-FURROW_VARS = [
-    'Maximum depth of furrows', 'Mean depth of furrows', 'Mean density of furrows'
-]
+# Separar Features y rellenar nulos
+X_raw = df[feature_cols].fillna(0)
+y_all = df['Target_Specie'] # TARGET DIRECTO: ESPECIE
+status = df['Extant/Extinct '].astype(str)
 
-SSFA_VARS = [
-    'Fractal complexity (Asfc)', 'HAsfc81 (HAsfc81)', 'Median of Asfc (MedianAsfc)', 
-    'Mean of Asfc (MeanAsfc)', 'Length-scale anisotropy (Sfrax) (epLsar)', 
-    'Length-scale anisotropy (NewEplsar)'
-]
+# ESTANDARIZAMOS LAS FEATURES
+scaler = StandardScaler()
+X_scaled = pd.DataFrame(scaler.fit_transform(X_raw), columns=feature_cols)
 
-ALL_NUMERIC_VARS = ISO_VARS + FURROW_VARS + SSFA_VARS
+mask_extant = status.str.contains('Extant', case=False, na=False)
+mask_extinct = status.str.contains('Extinct', case=False, na=False)
 
-# ---------------------------------------------------------
-# 2. FUNCIONES DE PREPROCESAMIENTO
-# ---------------------------------------------------------
-def read_dataset(path: str) -> pd.DataFrame:
-    if path.endswith('.csv'):
-        return pd.read_csv(path, header=0)
-    return pd.read_excel(path, header=1)
+# Sets de entrenamiento (Vivos)
+X_train = X_scaled[mask_extant]
+y_train_raw = y_all[mask_extant]
 
-def transform_to_valid_cols(df: pd.DataFrame) -> pd.DataFrame:
-    valid_cols = [c for c in ALL_NUMERIC_VARS if c in df.columns]
-    # Importante: rellenar nulos
-    df_numeric = df[valid_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
-    return df_numeric
+# Sets de proyección (Fósiles)
+X_project = X_scaled[mask_extinct]
+y_project_ids = df.loc[mask_extinct, 'Specimen']
 
-def transform_under_corr(df: pd.DataFrame, threshold: float = 0.95, visualization: bool = False) -> pd.DataFrame:
-    corr_matrix = df.corr().abs()
-    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-    to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
+# Codificamos los nombres de las ESPECIES a números
+le = LabelEncoder()
+y_train = le.fit_transform(y_train_raw)
+
+print(f"🏷️ Especies a predecir directamente: {len(le.classes_)}")
+print(f"🧬 Especímenes de entrenamiento (Vivos): {len(y_train)}")
+print(f"🦴 Fósiles a proyectar: {len(y_project_ids)}")
+
+# =========================================================
+# 2. DEFINICIÓN DE MODELOS (CON PROTECCIÓN DE DESBALANCEO)
+# =========================================================
+base_models = {
+    "Random Forest": RandomForestClassifier(class_weight='balanced', random_state=42),
+    "SVM": SVC(class_weight='balanced', probability=True, random_state=42),
+    "Logistic Regression": LogisticRegression(class_weight='balanced', max_iter=1000, random_state=42)
+}
+
+param_grids = {
+    "Random Forest": {'n_estimators': [50, 100, 200], 'max_depth': [None, 5, 10]},
+    "SVM": {'C': [5, 10, 15], 'kernel': ['linear', 'rbf']},
+    "Logistic Regression": {'C': [0.05, 0.1, 0.3, 0.5]}
+}
+
+loo = LeaveOneOut()
+
+# Lógica dinámica para la validación cruzada (GridSearch)
+min_class_samples = np.min(np.bincount(y_train))
+if min_class_samples >= 5:
+    cv_search = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+elif min_class_samples >= 3:
+    cv_search = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+elif min_class_samples == 2:
+    cv_search = StratifiedKFold(n_splits=2, shuffle=True, random_state=42)
+else:
+    cv_search = KFold(n_splits=3, shuffle=True, random_state=42)
+
+# =========================================================
+# 3. OPTIMIZACIÓN Y EVALUACIÓN DIRECTA (LOOCV)
+# =========================================================
+print("\n" + "="*50)
+print(" BUSCANDO EL MEJOR MODELO (CLASIFICACIÓN DIRECTA)")
+print("="*50)
+
+results_summary = {}
+best_model_name = ""
+best_acc = 0
+final_models = {}
+
+for name, model in base_models.items():
+    print(f"⚙️ Optimizando {name}...")
     
-    if visualization:
-        print(f"Reducción de correlación: Eliminando {len(to_drop)} variables redundantes.")
-        
-    return df.drop(columns=to_drop)
-
-# ---------------------------------------------------------
-# 3. FUNCIONES DE ENTRENAMIENTO Y REGISTRO
-# ---------------------------------------------------------
-def run_model_grid(estimator, param_grid, X_train, y_train, name):
-    print(f"\n--- Entrenando {name} (GridSearch) ---")
+    grid = GridSearchCV(model, param_grids[name], cv=cv_search, scoring='balanced_accuracy', n_jobs=-1)
+    grid.fit(X_train, y_train)
     
-    # StratifiedKFold suele ser mejor para Extant que tienen más datos
-    cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    best_estimator = grid.best_estimator_
+    final_models[name] = best_estimator 
     
-    grid_search = GridSearchCV(
-        estimator=estimator,
-        param_grid=param_grid,
-        scoring='accuracy',
-        cv=cv_strategy, 
-        n_jobs=-1,
-        verbose=1
-    )
+    y_pred_loocv = cross_val_predict(best_estimator, X_train, y_train, cv=loo)
     
-    grid_search.fit(X_train, y_train)
+    bal_acc = balanced_accuracy_score(y_train, y_pred_loocv)
+    results_summary[name] = bal_acc
     
-    print(f"Mejor Accuracy Validación ({name}): {grid_search.best_score_:.4f}")
-    return grid_search.best_estimator_, grid_search.best_score_, grid_search.best_params_
+    print(f"   Balanced Accuracy: {bal_acc:.2%} | Params: {grid.best_params_}")
 
-def run_xgboost(X_train, y_train, le):
-    print("\n--- Entrenando XGBoost ---")
-    y_train_encoded = le.transform(y_train)
-    
-    xgb_base = xgb.XGBClassifier(
-        n_estimators=100, 
-        use_label_encoder=False, 
-        eval_metric='mlogloss', 
-        random_state=42
-    )
-    
-    grid_search = GridSearchCV(
-        estimator=xgb_base,
-        param_grid=param_grid_xgb,
-        scoring='accuracy',
-        cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
-        n_jobs=-1,
-        verbose=1
-    )
-    
-    grid_search.fit(X_train, y_train_encoded)
-    print(f"Mejor Accuracy Validación (XGBoost): {grid_search.best_score_:.4f}")
-    
-    return grid_search.best_estimator_, grid_search.best_score_, grid_search.best_params_
+    if bal_acc > best_acc:
+        best_acc = bal_acc
+        best_model_name = name
 
-def evaluate_and_log(results_list, model_name, model, X_test, y_test, cv_score, best_params, label_encoder=None):
-    """
-    Evalúa el modelo en el set de TEST (Extant reservado) y guarda todas las métricas.
-    """
-    # Predicción
-    y_pred = model.predict(X_test)
-    
-    # Métricas para XGBoost (numéricas) vs Sklearn (strings)
-    if label_encoder is not None:
-        y_test_numeric = label_encoder.transform(y_test)
-        # y_pred ya es numérico en xgb
-        acc = accuracy_score(y_test_numeric, y_pred)
-        f1 = f1_score(y_test_numeric, y_pred, average='weighted', zero_division=0)
-        prec = precision_score(y_test_numeric, y_pred, average='weighted', zero_division=0)
-        rec = recall_score(y_test_numeric, y_pred, average='weighted', zero_division=0)
-    else:
-        acc = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
-        prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-        rec = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+print(f"\n🥇 EL MEJOR MODELO DIRECTO ES: {best_model_name} con {best_acc:.2%} de Balanced Accuracy")
 
-    result_entry = {
-        "Modelo": model_name,
-        "CV_Accuracy_Train": round(cv_score, 4),    # Rendimiento en validación interna (sobre el 80% Train)
-        "Test_Accuracy": round(acc, 4),             # Rendimiento en datos no vistos (el 20% Test)
-        "Test_F1_Weighted": round(f1, 4),
-        "Test_Precision": round(prec, 4),
-        "Test_Recall": round(rec, 4),
-        "Best_Params": str(best_params)
-    }
-    
-    results_list.append(result_entry)
-    print(f" -> Resultados guardados para {model_name}")
+# =========================================================
+# 4. ENTRENAMIENTO FINAL Y PROYECCIÓN DE FÓSILES
+# =========================================================
+print("\n" + "="*50)
+print(" PROYECTANDO FÓSILES")
+print("="*50)
 
-# ---------------------------------------------------------
-# 4. MAIN
-# ---------------------------------------------------------
-if __name__ == "__main__":
-    
-    results_log = []
+winner_model = final_models[best_model_name]
+winner_model.fit(X_train, y_train) # Re-entrenamos con todo el dataset
 
-    # --- A. Carga ---
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    FILE = os.path.join(BASE_DIR, "src/dataset_complete_onehot.csv")
+preds_encoded = winner_model.predict(X_project)
+probs = winner_model.predict_proba(X_project)
+confidence = np.max(probs, axis=1)
 
-    df = read_dataset(FILE)
+projection_table = pd.DataFrame()
+projection_table['Specimen_Extinct'] = y_project_ids.values
+projection_table['Pred_Specie'] = le.inverse_transform(preds_encoded)
+projection_table['Conf_Specie'] = np.round(confidence, 2)
 
-    # --- B. Limpieza ---
-    df.columns = df.columns.str.strip()
-    STATUS_COL = "Extant/Extinct" 
-    # Comprobación de nombre de columna
-    if "Status" in df.columns: STATUS_COL = "Status"
-    
-    TARGET_COL = "Specie"
+output_csv = "predicciones_directas_especies.csv"
+projection_table.to_csv(output_csv, index=False)
+print(f"📁 Fósiles procesados y guardados en: {output_csv}")
 
-    if STATUS_COL not in df.columns:
-        print(f"❌ Error: No se encuentra la columna '{STATUS_COL}'.")
-        exit()
+# =========================================================
+# 5. GRÁFICOS
+# =========================================================
+print("\n📊 Generando gráficos de rendimiento...")
 
-    df[STATUS_COL] = df[STATUS_COL].astype(str).str.strip()
-    df[TARGET_COL] = df[TARGET_COL].astype(str).str.strip()
+# Calculamos las predicciones LOOCV del modelo ganador para usar en los gráficos y el reporte
+y_pred_loocv_winner = cross_val_predict(winner_model, X_train, y_train, cv=loo)
 
-    # --- C. FILTRADO (SOLO EXTANT) ---
-    print(f">>> Filtrando datos para usar SOLO especies EXTANT (Vivas)")
-    df_extant = df[df[STATUS_COL] == 'Extant'].copy()
+# GRÁFICO 1: Comparativa de Balanced Accuracy
+plt.figure(figsize=(9, 5))
+names = list(results_summary.keys())
+values = list(results_summary.values())
+bars = plt.bar(names, values, color=['#6a4c93', '#1982c4', '#8ac926'])
+plt.ylim(0, 1.15)
+plt.title('Balanced Accuracy (LOOCV) - Clasificación Directa de Especies')
+plt.ylabel('Balanced Accuracy')
 
-    print(f"Total de muestras Extant: {len(df_extant)}")
+for bar in bars:
+    plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01, 
+             f"{bar.get_height():.1%}", ha='center', fontweight='bold')
+plt.tight_layout()
+plt.savefig("accuracy_comparison_directo_especies.png")
+plt.close()
+print("-> Guardado: 'accuracy_comparison_directo_especies.png'")
 
-    # --- D. División Train / Test (80/20) sobre Extant ---
-    X_full = transform_to_valid_cols(df_extant)
-    y_full = df_extant[TARGET_COL]
+# GRÁFICO 2: Matriz de Confusión del GANADOR
+plt.figure(figsize=(14, 12))
+cm = confusion_matrix(y_train, y_pred_loocv_winner)
+cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
 
-    # Intentamos división estratificada (mejor para clasificar especies)
-    try:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_full, y_full, test_size=0.2, random_state=42, stratify=y_full
-        )
-        print("División Train/Test: Estratificada (balanceada por especie).")
-    except ValueError:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_full, y_full, test_size=0.2, random_state=42
-        )
-        print("⚠️ Aviso: División Train/Test aleatoria simple (algunas especies tenían muy pocos datos).")
+sns.heatmap(cm_norm, annot=True, fmt='.2f', cmap='Purples',
+            xticklabels=le.classes_, yticklabels=le.classes_,
+            annot_kws={"size": 8})
+plt.title(f'Matriz de Confusión: {best_model_name} (LOOCV)\nObjetivo: ESPECIES (Directo)') 
+plt.xlabel('Predicción')
+plt.ylabel('Realidad')
+plt.xticks(rotation=90)
+plt.yticks(rotation=0)
+plt.tight_layout()
+plt.savefig("matriz_confusion_directo_especies.png")
+plt.close()
+print("-> Guardado: 'matriz_confusion_directo_especies.png'")
 
-    print(f"Shape Train: {X_train.shape} | Shape Test: {X_test.shape}")
 
-    # --- E. Preprocesamiento (Fit en Train, Transform en Test) ---
-    print("\n>>> PREPROCESAMIENTO")
-    
-    # 1. Reducción de Correlación
-    # Aprendemos qué columnas borrar usando solo Train
-    X_train_reduced = transform_under_corr(X_train, threshold=0.95, visualization=True)
-    cols_kept = X_train_reduced.columns
-    X_test_reduced = X_test[cols_kept]
+# =========================================================
+# 6. GUARDAR MÉTRICAS DE TEXTO COMO IMAGEN (NUEVO)
+# =========================================================
+print("\n📝 Guardando el reporte de clasificación como imagen...")
 
-    # 2. Estandarización
-    scaler = StandardScaler()
-    X_train_std = pd.DataFrame(scaler.fit_transform(X_train_reduced), columns=cols_kept, index=X_train_reduced.index)
-    X_test_std = pd.DataFrame(scaler.transform(X_test_reduced), columns=cols_kept, index=X_test_reduced.index)
+# Extraemos el texto del reporte de sklearn
+class_report_text = classification_report(y_train, y_pred_loocv_winner, target_names=le.classes_)
 
-    # 3. Normalización (Yeo-Johnson)
-    pt = PowerTransformer(method="yeo-johnson", standardize=True)
-    X_train_yj = pd.DataFrame(pt.fit_transform(X_train_reduced), columns=cols_kept, index=X_train_reduced.index)
-    X_test_yj = pd.DataFrame(pt.transform(X_test_reduced), columns=cols_kept, index=X_test_reduced.index)
+# Construimos el texto completo
+texto_final = f"=== RESUMEN DE MODELO GANADOR (LOOCV) ===\n"
+texto_final += f"Algoritmo: {best_model_name}\n"
+texto_final += f"Balanced Accuracy general: {best_acc:.2%}\n\n"
+texto_final += "=== REPORTE DE CLASIFICACIÓN ===\n"
+texto_final += class_report_text
 
-    # --- F. Ejecución de Modelos ---
-    
-    # 1. Decision Tree
-    model, cv_score, params = run_model_grid(DecisionTreeClassifier(random_state=42), param_grid_dt, X_train_reduced, y_train, "Decision Tree")
-    evaluate_and_log(results_log, "Decision Tree", model, X_test_reduced, y_test, cv_score, params)
+print(texto_final) # Lo imprimimos en consola también
 
-    # 2. XGBoost
-    le = LabelEncoder()
-    le.fit(y_full) # Ajustamos encoder con todas las especies disponibles en Extant
-    try:
-        model, cv_score, params = run_xgboost(X_train_reduced, y_train, le)
-        evaluate_and_log(results_log, "XGBoost", model, X_test_reduced, y_test, cv_score, params, label_encoder=le)
-    except Exception as e:
-        print(f"⚠️ Error en XGBoost: {e}")
+# Creamos una figura en blanco para dibujar el texto
+fig_text, ax_text = plt.subplots(figsize=(10, 8))
+ax_text.axis('off') # Ocultamos los ejes
 
-    # 3. Logistic Regression
-    model, cv_score, params = run_model_grid(LogisticRegression(max_iter=5000, random_state=42), param_grid_logreg, X_train_std, y_train, "Logistic Regression")
-    evaluate_and_log(results_log, "Logistic Regression", model, X_test_std, y_test, cv_score, params)
+# Escribimos el texto usando una fuente monoespaciada para mantener las columnas alineadas
+ax_text.text(0.01, 0.99, texto_final, fontsize=12, fontfamily='monospace', 
+             va='top', ha='left', transform=ax_text.transAxes)
 
-    # 4. MLP Classifier
-    model, cv_score, params = run_model_grid(MLPClassifier(max_iter=3000, random_state=42), param_grid_mlp, X_train_std, y_train, "MLP Classifier")
-    evaluate_and_log(results_log, "MLP Neural Net", model, X_test_std, y_test, cv_score, params)
+plt.savefig('metricas_resumen_ml.png', dpi=300, bbox_inches='tight', facecolor='white')
+plt.close()
+print("-> Guardado: 'metricas_resumen_ml.png'")
 
-    # 5. LDA
-    try:
-        model, cv_score, params = run_model_grid(LinearDiscriminantAnalysis(), param_grid_lda, X_train_std, y_train, "LDA")
-        evaluate_and_log(results_log, "LDA", model, X_test_std, y_test, cv_score, params)
-    except Exception as e:
-        print(f"⚠️ Error en LDA: {e}")
-
-    # 6. Naive Bayes
-    model, cv_score, params = run_model_grid(GaussianNB(), param_grid_nb, X_train_yj, y_train, "Naive Bayes")
-    evaluate_and_log(results_log, "Naive Bayes", model, X_test_yj, y_test, cv_score, params)
-
-    # --- G. Guardar Resultados ---
-    print("\n>>> GUARDANDO RESULTADOS")
-    df_results = pd.DataFrame(results_log)
-    
-    if not df_results.empty:
-        # Ordenar por mejor Accuracy en Test
-        df_results = df_results.sort_values(by="Test_Accuracy", ascending=False)
-        
-        output_file = "resultados_metricas_extant_only.csv"
-        df_results.to_csv(output_file, index=False)
-        
-        print(df_results)
-        print(f"\n✅ Archivo generado: {output_file}")
-    else:
-        print("⚠️ No se generaron resultados.")
+print("\n✅ Todo completado con éxito. Ejecución finalizada.")

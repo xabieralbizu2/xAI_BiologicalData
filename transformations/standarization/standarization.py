@@ -113,18 +113,18 @@ if __name__ == "__main__":
         sys.exit()
 
     # Nombres de archivo
-    input_file = src_folder / "dataset_noonehot.csv" # Tu Excel original sucio
+    input_file = src_folder / "dataset_onehot.csv" # Tu Excel original sucio
     
     # SI NO EXISTE EL EXCEL ORIGINAL, BUSCAMOS VARIANTES
     if not input_file.exists():
         # Intenta buscar 'PALAEO3_microtexture2.xlsx' (sin espacio)
-        if (src_folder / "dataset_noonehot.csv").exists():
-            input_file = src_folder / "dataset_noonehot.csv"
+        if (src_folder / "dataset_onehot.csv").exists():
+            input_file = src_folder / "dataset_onehot.csv"
         else:
             print(f"❌ Error: No encuentro el archivo {input_file.name}")
             sys.exit()
 
     # SALIDA: Ahora es .csv
-    output_file = src_folder / "dataset_noonehot_std.csv"
+    output_file = src_folder / "dataset_onehot_std.csv"
 
     standardize_dataset(input_file, output_file)

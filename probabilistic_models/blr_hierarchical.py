@@ -21,6 +21,30 @@ CHAINS = 4
 DRAWS = 1000
 TUNE = 1500
 
+# =========================================================
+# JERARQUÍA BHC (corte K=3, UPGMA sobre Bhattacharyya, ld5)
+#
+#  El BHC recuperó la filogenia sin supervisión (NMI=0.85).
+#  Lophocebus aterrimus pasa al grupo Papio porque el BHC
+#  lo fusiona con ese clado (dist 0.48) antes que con
+#  Cercocebus+Macaca (dist 0.80). Ese es el único cambio
+#  respecto a la jerarquía manual anterior.
+#
+#  Grupo_Papionini_A : Papio anubis, P. hamadryas,
+#                      P. ursinus, Lophocebus aterrimus
+#  Grupo_Papionini_B : Cercocebus atys, Macaca sylvanus
+#  Grupo_Theropithecus: Theropithecus gelada
+# =========================================================
+BHC_GROUP_MAP = {
+    "Papio anubis":          "Grupo_Papionini_A",
+    "Papio hamadryas":       "Grupo_Papionini_A",
+    "Papio ursinus":         "Grupo_Papionini_A",
+    "Lophocebus aterrimus":  "Grupo_Papionini_A",
+    "Cercocebus atys":       "Grupo_Papionini_B",
+    "Macaca sylvanus":       "Grupo_Papionini_B",
+    "Theropithecus gelada":  "Grupo_Theropithecus",
+}
+
 print(f"--- INICIANDO MODELO JERÁRQUICO BAYESIANO | PRIOR: {TIPO_PRIOR.upper()} ---")
 
 # =========================================================
@@ -33,9 +57,11 @@ metadata_cols = ['Target_Specie', 'Target_group', 'Extant/Extinct ', 'Specimen',
 feature_cols = [c for c in df.columns if c not in metadata_cols]
 
 X_raw = df[feature_cols].fillna(0)
-y_group_all = df['Target_group']
 y_specie_all = df['Target_Specie']
 status = df['Extant/Extinct '].astype(str)
+
+# Aplicar jerarquía BHC: reemplaza Target_group por los grupos del dendrograma
+y_group_all = df['Target_Specie'].map(BHC_GROUP_MAP).fillna(df['Target_group'])
 
 # Estandarización global
 scaler = StandardScaler()

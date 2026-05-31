@@ -45,7 +45,7 @@ if __name__ == "__main__":
     # 1. CARGA DE DATOS
     # -----------------
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    FILE = os.path.join(BASE_DIR, "../one_hot/dataset_noonehot.csv")
+    FILE = os.path.join(BASE_DIR, "dataset_onehot.csv")
 
     df = pd.read_csv(FILE)
 

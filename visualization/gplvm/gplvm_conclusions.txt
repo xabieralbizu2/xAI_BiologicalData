@@ -1,0 +1,45 @@
+CONCLUSIONES GPLVM — espacio latente 5D (ld5_40)
+==================================================
+
+1. VARIANZA POR DIMENSIÓN
+   LD1: 3.73 (51.1%) — eje principal de variación morfológica
+   LD2: 1.59 (21.7%) — segunda fuente de variación
+   LD3: 1.21 (16.6%) — separa géneros próximos
+   LD4: 0.47  (6.4%) — señal marginal
+   LD5: 0.30  (4.1%) — señal marginal / posible ruido
+   → LD1–LD3 concentran el 89.4% de la varianza total.
+     LD4 y LD5 aportan poco. ld3 ya captura casi toda la estructura.
+
+2. SEPARABILIDAD ENTRE ESPECIES EXTANTES
+   → Theropithecus gelada se separa del resto en todas las métricas.
+   → El clado Papio (anubis, hamadryas, ursinus) se separa internamente.
+
+
+3. DISTANCIAS DE FÓSILES A ESPECIES EXTANTES
+   Parapapio lothagamensis (n=4): mayoritariamente Papio hamadryas (3/4), dist. media 1.22.
+   Parapapio ado (n=4): mayoritariamente Papio hamadryas (2/4), dist. media 1.00.
+   Parapapio (n=7): muy disperso entre géneros, dist. media 1.12.
+     Alta variabilidad intra-taxón.
+   Cercopithecoide williamsi (n=3): sin asignación clara (1 género distinto por espécimen).
+   Theropithecus oswaldi (n=17): no converge a T. gelada. Se reparte entre
+     Cercocebus atys (7) y Papio hamadryas (6). Alta variabilidad intra-taxón.
+   
+   Especímen más claro:  43996_3443_P (Parapapio) → Papio hamadryas, dist=0.32.
+   Especímen más ambiguo: 613_3534_TO (T. oswaldi) → T. gelada, dist=2.56.
+
+4. CONSISTENCIA ENTRE CONFIGURACIONES (ld3 / ld5 / ld7)
+   22 de 35 especímenes (63%) tienen la misma especie más cercana en las 3 configs.
+   Cercopithecoide williamsi: 3/3 consistentes.
+   Parapapio lothagamensis:   3/4 consistentes — el más robusto de los Parapapio.
+   Parapapio ado:             2/4 consistentes.
+   Parapapio:                 3/7 consistentes — taxón heterogéneo.
+   Theropithecus oswaldi:    11/17 consistentes — el más inestable (53%).
+   → Los inconsistentes son casos límite con morfología intermedia entre dos grupos,
+     no fallos del modelo.
+
+5. INCERTIDUMBRE VARIACIONAL (q_sigma)
+   Extantes: sigma media = 0.0659 ± 0.0086
+   Fósiles:  sigma media = 0.0666 ± 0.0063
+   → Diferencia mínima: el modelo proyecta fósiles con la misma confianza que extantes.
+   → LD4 (sigma=0.115) y LD5 (sigma=0.092) tienen el doble de incertidumbre que LD1–LD3,
+     confirmando que son las dimensiones menos informativas.
