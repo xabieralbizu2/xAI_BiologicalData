@@ -1,448 +1,450 @@
+import os
+import json
 import pandas as pd
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 import arviz as az
-import scipy.stats as stats
 import matplotlib.pyplot as plt
 import seaborn as sns
-import matplotlib.patches as mpatches 
+import matplotlib.patches as mpatches
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import confusion_matrix, classification_report
-
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.model_selection import LeaveOneOut
+from sklearn.metrics import (
+    confusion_matrix, classification_report,
+    accuracy_score, balanced_accuracy_score, f1_score,
+)
+from tqdm import tqdm
 import warnings
 warnings.filterwarnings("ignore")
 
 # =========================================================
-# CONFIGURACIÓN DEL PRIOR (¡AQUÍ ELIGES EL MODELO!)
+# CONFIGURACIÓN
 # =========================================================
-# Opciones disponibles: "lasso", "horseshoe", "spike_and_slab"
-TIPO_PRIOR = "lasso" 
-print(f"--- INICIANDO SCRIPT CON PRIOR: {TIPO_PRIOR.upper()} ---")
+# Prior del modelo bayesiano: "lasso", "gaussian", "horseshoe", "spike_and_slab"
+TIPO_PRIOR = "horseshoe"
+CHAINS = 4
+DRAWS = 1000
+TUNE = 1000              # 1000 basta para un modelo lineal pequeño (antes 1500)
+TARGET_ACCEPT = 0.9      # 0.9 en vez de 0.99: NUTS da pasos razonables sin
+                         # disparar el coste x5-x10. Si aparecen divergencias,
+                         # la solución es reparametrizar, no volver a 0.99.
+
+# --- Selección de variables (dentro de cada fold, SIN fuga) ---
+# K_FEATURES y el resto de hiperparámetros se FIJAN por criterio previo, no se
+# eligen maximizando el LOOCV (eso sería optimizar contra el test). El barrido
+# exploratorio sugirió k≈30 como zona estable; se fija aquí de forma honesta.
+USAR_SELECCION = True
+K_FEATURES = 30
+
+# --- Representación de entrada ---
+# Combinar variables crudas (microtextura ISO/SSFA) + dimensiones latentes del
+# GPLVM mejora el accuracy honesto respecto a usar cada una por separado, porque
+# capturan aspectos complementarios de la señal morfológica.
+USAR_LATENTES_GPLVM = True
+
+# LOOCV exacto: mismos ajustes que el modelo final (máximo rigor).
+DRAWS_CV = DRAWS
+TUNE_CV = TUNE
+CHECKPOINT_LOO = f"loo_checkpoint_blr_{TIPO_PRIOR}.json"
+
+print(f"--- BLR | PRIOR: {TIPO_PRIOR.upper()} | k={K_FEATURES if USAR_SELECCION else 'todas'} "
+      f"| latentes={USAR_LATENTES_GPLVM} ---")
 
 # =========================================================
 # 1. CARGA Y PREPARACIÓN DE DATOS
 # =========================================================
 print("Cargando y filtrando datos...")
-df = pd.read_csv('src/dataset_nbool_std.csv')
-
+df = pd.read_csv('src/dataset_seleccionado_extant.csv')
 df['Extant/Extinct '] = df['Extant/Extinct '].str.strip()
-extant_df = df[df['Extant/Extinct '] == 'Extant'].copy()
+extant_df = df[df['Extant/Extinct '] == 'Extant'].copy().reset_index(drop=True)
 
-X_raw = extant_df.drop(columns=['Target_Specie', 'Extant/Extinct ', 'Specimen', 'ID'])
+X_raw = extant_df.drop(columns=['Target_Specie', 'Extant/Extinct ', 'Specimen', 'ID'],
+                       errors='ignore')
+
+# Añadir dimensiones latentes del GPLVM si se solicita
+if USAR_LATENTES_GPLVM and os.path.exists('src/espacio_latente_gplvm.csv'):
+    lat = pd.read_csv('src/espacio_latente_gplvm.csv')
+    lat['Extant/Extinct '] = lat['Extant/Extinct '].str.strip()
+    lat_ext = lat[lat['Extant/Extinct '] == 'Extant'].copy().reset_index(drop=True)
+    lat_cols = [c for c in lat_ext.columns if c.startswith('Latent_')]
+    # Alinear por orden de fila (ambos provienen del mismo subconjunto extant)
+    if len(lat_ext) == len(X_raw):
+        X_raw = pd.concat([X_raw.reset_index(drop=True),
+                           lat_ext[lat_cols].reset_index(drop=True)], axis=1)
+        print(f"  Añadidas {len(lat_cols)} dimensiones latentes del GPLVM.")
+    else:
+        print("  AVISO: nº de filas extant no coincide entre datasets; "
+              "se omiten las latentes.")
+
 y_raw = extant_df['Target_Specie']
-
 feature_names = X_raw.columns.tolist()
 
 le = LabelEncoder()
 y_idx = le.fit_transform(y_raw)
 n_classes = len(le.classes_)
+X_full = X_raw.values
+n_features_total = X_full.shape[1]
 
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X_raw)
-n_features = X_scaled.shape[1]
+print(f"Especies a clasificar : {n_classes}")
+print(f"Variables disponibles : {n_features_total}")
+print(f"Muestras (Extant)     : {len(y_idx)}")
 
-print(f"Especies a clasificar: {n_classes}")
-print(f"Variables predictoras: {n_features}")
-print(f"Total de muestras (Extant): {len(y_idx)}")
-
-# =========================================================
-# 2. CONSTRUCCIÓN DEL MODELO Y MUESTREO (MCMC)
-# =========================================================
-print(f"\nConstruyendo y muestreando el modelo ({TIPO_PRIOR})...")
-with pm.Model() as bayesian_logistic:
-    
-    X_data = pm.Data('X', X_scaled)
-    y_data = pm.Data('y', y_idx)
-    
-    # Intercepto estándar (no penalizado fuertemente)
-    alpha_rest = pm.Normal('alpha_rest', mu=0, sigma=5, shape=n_classes - 1)
-    
-    # -----------------------------------------------------
-    # LÓGICA DE PRIORS INTERCAMBIABLES
-    # -----------------------------------------------------
-    shape_beta = (n_features, n_classes - 1)
-    
-    if TIPO_PRIOR == "lasso":
-        # Prior de Laplace tradicional (L1 Bayesiano)
-        beta_rest = pm.Laplace('beta_rest', mu=0, b=0.1, shape=shape_beta)
-
-    elif TIPO_PRIOR == "gaussian":
-        # Prior Normal tradicional (L2 / Ridge Bayesiano)
-        # Sigma controla cuánta regularización aplicas (menor sigma = más penalización)
-        beta_rest = pm.Normal('beta_rest', mu=0, sigma=1.0, shape=shape_beta)
-        
-    elif TIPO_PRIOR == "horseshoe":
-        # Horseshoe (parametrización no centrada para evitar divergencias de NUTS)
-        tau = pm.HalfCauchy('tau', beta=1) # Encogimiento global
-        lam = pm.HalfCauchy('lam', beta=1, shape=shape_beta) # Encogimiento local
-        z = pm.Normal('z', mu=0, sigma=1, shape=shape_beta) # Variable latente
-        # beta = z * tau * lambda
-        beta_rest = pm.Deterministic('beta_rest', z * tau * lam)
-        
-    elif TIPO_PRIOR == "spike_and_slab":
-        # Relajación continua de Spike & Slab (para que NUTS pueda muestrear)
-        # w = probabilidad de pertenecer a la Losa (Slab)
-        w_local = pm.Beta('w_local', alpha=1, beta=1, shape=shape_beta)
-        # Spike = muy concentrado en 0 (irrelevante)
-        spike = pm.Normal('spike', mu=0, sigma=0.05, shape=shape_beta)
-        # Slab = disperso (relevante)
-        slab = pm.Normal('slab', mu=0, sigma=5.0, shape=shape_beta)
-        # Combinación de ambos basada en el peso 'w'
-        beta_rest = pm.Deterministic('beta_rest', w_local * slab + (1 - w_local) * spike)
-        
-    else:
-        raise ValueError("TIPO_PRIOR no reconocido. Usa 'lasso', 'horseshoe' o 'spike_and_slab'.")
-    # -----------------------------------------------------
-    
-    # Añadimos la clase base fijada a 0 para identificabilidad
-    alpha = pt.concatenate([pt.zeros(1), alpha_rest])
-    beta = pt.concatenate([pt.zeros((n_features, 1)), beta_rest], axis=1)
-    
-    # Ecuación logística multinomial
-    mu = pm.math.dot(X_data, beta) + alpha
-    p = pm.Deterministic('p', pm.math.softmax(mu, axis=1))
-    
-    y_obs = pm.Categorical('y_obs', p=p, observed=y_data)
-
-    idata = pm.sample(
-        draws=1000,         
-        tune=1500,          
-        chains=4,           
-        target_accept=0.99, # Mantenemos alto para Horseshoe
-        random_seed=42
-    )
-    
-    print("\nGenerando simulaciones a posteriori para métricas y evaluación...")
-    pm.sample_posterior_predictive(idata, extend_inferencedata=True, random_seed=42)
 
 # =========================================================
-# 3. EXTRACCIÓN Y GRAFICACIÓN DE DISTRIBUCIONES (TODAS LAS VARIABLES)
+# 2. SELECCIÓN DE VARIABLES (SIN FUGA)
+#    Ajusta scaler + SelectKBest SOLO con el train que se le
+#    pase. Devuelve los arrays transformados y los objetos
+#    ajustados para aplicar la MISMA transformación al test.
 # =========================================================
-print("\nGenerando gráficos de distribuciones a posteriori para TODAS las variables...")
+def ajustar_preproceso(X_tr, y_tr):
+    scaler = StandardScaler().fit(X_tr)
+    X_tr_s = scaler.transform(X_tr)
+    selector = None
+    if USAR_SELECCION:
+        k = min(K_FEATURES, X_tr_s.shape[1])
+        selector = SelectKBest(f_classif, k=k).fit(X_tr_s, y_tr)
+        X_tr_s = selector.transform(X_tr_s)
+    return X_tr_s, scaler, selector
 
-# Extraemos la distribución sin importar cómo la llamó el modelo internamente
-beta_samples = idata.posterior['beta_rest'].values
-beta_samples_flat = beta_samples.reshape(-1, n_features, n_classes - 1)
 
-cols = 4
-rows = int(np.ceil(n_features / cols))
+def aplicar_preproceso(X, scaler, selector):
+    X_s = scaler.transform(X)
+    if selector is not None:
+        X_s = selector.transform(X_s)
+    return X_s
 
-fig, axes = plt.subplots(rows, cols, figsize=(16, 3 * rows))
-axes = axes.flatten() 
-colors = sns.color_palette("husl", n_classes)
-
-for idx in range(n_features):
-    ax = axes[idx]
-    
-    # Especie Base (Fijada en 0)
-    sns.kdeplot(x=np.zeros(beta_samples_flat.shape[0]), ax=ax, fill=False, color=colors[0], 
-                linewidth=1.5, warn_singular=False)
-    
-    # Demás especies
-    for c in range(n_classes - 1):
-        sns.kdeplot(x=beta_samples_flat[:, idx, c], ax=ax, fill=False, color=colors[c+1], 
-                    alpha=0.5, linewidth=1.5)
-        
-    ax.set_title(f"{feature_names[idx]}", fontsize=12)
-    if idx >= n_features - cols:
-        ax.set_xlabel("Coefficient", fontsize=10)
-    if idx % cols == 0:
-        ax.set_ylabel("Density", fontsize=10)
-
-    ax.set_ylim(0, 5)
-        
-    ax.axvline(0, color='black', linestyle='--', alpha=0.5)
-
-for idx in range(n_features, len(axes)):
-    fig.delaxes(axes[idx])
-
-handles = [mpatches.Patch(color=colors[0], label=f"{le.classes_[0]} (Base)")]
-for c in range(n_classes - 1):
-    handles.append(mpatches.Patch(color=colors[c+1], alpha=0.5, label=f"{le.classes_[c+1]}"))
-
-plt.tight_layout(rect=[0, 0.08, 1, 1]) 
-fig.legend(handles=handles, title="Class", loc='lower center', ncol=n_classes, bbox_to_anchor=(0.5, 0))
-
-plt.savefig(f'1_distribuciones_posteriori_todas_{TIPO_PRIOR}.png', dpi=300, bbox_inches='tight')
-print(f"-> Guardado: '1_distribuciones_posteriori_todas_{TIPO_PRIOR}.png'")
 
 # =========================================================
-# 4. DIAGNÓSTICO LOOCV (MOTOR DEL MODELO)
+# 3. MOTOR BAYESIANO (FUNCIÓN REUTILIZABLE)
 # =========================================================
-print("\nEvaluando estabilidad del modelo con PSIS-LOOCV...")
+def construir_y_muestrear_modelo(X_val, y_val, n_classes, tipo_prior,
+                                 draws=DRAWS, tune=TUNE, progressbar=True):
+    n_features = X_val.shape[1]
+    with pm.Model() as model:
+        X_data = pm.Data('X', X_val)
+        y_data = pm.Data('y', y_val)
+
+        alpha_rest = pm.Normal('alpha_rest', mu=0, sigma=5, shape=n_classes - 1)
+        shape_beta = (n_features, n_classes - 1)
+
+        if tipo_prior == "lasso":
+            beta_rest = pm.Laplace('beta_rest', mu=0, b=0.1, shape=shape_beta)
+        elif tipo_prior == "gaussian":
+            beta_rest = pm.Normal('beta_rest', mu=0, sigma=1.0, shape=shape_beta)
+        elif tipo_prior == "horseshoe":
+            tau = pm.HalfCauchy('tau', beta=1)
+            lam = pm.HalfCauchy('lam', beta=1, shape=shape_beta)
+            z = pm.Normal('z', mu=0, sigma=1, shape=shape_beta)
+            beta_rest = pm.Deterministic('beta_rest', z * tau * lam)
+        elif tipo_prior == "spike_and_slab":
+            w_local = pm.Beta('w_local', alpha=1, beta=1, shape=shape_beta)
+            spike = pm.Normal('spike', mu=0, sigma=0.05, shape=shape_beta)
+            slab = pm.Normal('slab', mu=0, sigma=5.0, shape=shape_beta)
+            beta_rest = pm.Deterministic('beta_rest', w_local * slab + (1 - w_local) * spike)
+        else:
+            raise ValueError("TIPO_PRIOR no reconocido.")
+
+        alpha = pt.concatenate([pt.zeros(1), alpha_rest])
+        beta = pt.concatenate([pt.zeros((n_features, 1)), beta_rest], axis=1)
+
+        mu = pm.math.dot(X_data, beta) + alpha
+        p = pm.Deterministic('p', pm.math.softmax(mu, axis=1))
+        y_obs = pm.Categorical('y_obs', p=p, observed=y_data)
+
+        idata = pm.sample(draws=draws, tune=tune, chains=CHAINS,
+                          target_accept=TARGET_ACCEPT, random_seed=42,
+                          progressbar=progressbar)
+    return model, idata
+
+
+def predecir_proba_bayesiano(model, idata, X_new):
+    with model:
+        pm.set_data({'X': X_new, 'y': np.zeros(len(X_new), dtype=int)})
+        ppc = pm.sample_posterior_predictive(
+            idata, predictions=True, var_names=['p'],
+            random_seed=42, progressbar=False)
+    p_samples = ppc.predictions['p'].values
+    p_mean = p_samples.reshape(-1, len(X_new), p_samples.shape[-1]).mean(axis=0)
+    return p_mean
+
+
+# =========================================================
+# 4. MODELO FINAL (todos los extant, con selección global)
+#    Solo para distribuciones posteriori / diagnóstico / fósiles.
+#    OJO: este preproceso global usa todos los datos; es válido
+#    para INTERPRETAR y para PREDECIR FÓSILES, pero NO se usa
+#    para estimar accuracy (eso lo hace el LOOCV de la sección 6).
+# =========================================================
+print(f"\nAjustando preproceso global y muestreando modelo final ({TIPO_PRIOR})...")
+X_final, scaler_global, selector_global = ajustar_preproceso(X_full, y_idx)
+sel_names = (np.array(feature_names)[selector_global.get_support()].tolist()
+             if selector_global is not None else feature_names)
+n_features = X_final.shape[1]
+print(f"  Variables seleccionadas ({n_features}): {sel_names}")
+
+bayesian_logistic, idata = construir_y_muestrear_modelo(
+    X_final, y_idx, n_classes, TIPO_PRIOR, draws=DRAWS, tune=TUNE, progressbar=True)
 
 with bayesian_logistic:
     pm.compute_log_likelihood(idata)
 
+# --- Distribución posterior de los coeficientes (beta_rest) ---
+# beta_rest tiene forma (n_features, n_classes-1). Etiquetamos cada coordenada
+# con el nombre de la variable seleccionada y la clase a la que corresponde
+# (la clase 0 es la referencia y queda fijada a 0, por eso son n_classes-1).
+print("\nGuardando distribución posterior de los coeficientes (beta_rest)...")
+coords_beta = {
+    "beta_rest_dim_0": sel_names,
+    "beta_rest_dim_1": list(le.classes_[1:]),
+}
+try:
+    idata = idata.assign_coords(coords_beta)
+except Exception as e:
+    print(f"  AVISO: no se pudieron asignar coords descriptivas ({e}).")
+
+# --- Figura ÚNICA y legible: top coeficientes (variable x clase) ---
+# Graficar las 30 variables x (n_classes-1) clases = ~180 coeficientes es
+# ilegible y, además, casi todos están contraídos a cero. En lugar de
+# seleccionar VARIABLES (que arrastran sus clases nulas), seleccionamos los
+# COEFICIENTES INDIVIDUALES que más se alejan del cero y los mostramos en un
+# único forest plot ordenado por magnitud. Las dimensiones latentes del GPLVM
+# se excluyen por no ser interpretables como descriptores de microtextura.
+TOP_COEFS = 10
+
+post = idata.posterior['beta_rest']                   # (chain, draw, dim0, dim1)
+clases = list(le.classes_[1:])
+# Magnitud posterior |media| de cada coeficiente (variable, clase).
+mean_abs = np.abs(post.mean(dim=['chain', 'draw']).values)   # (n_features, n_clases)
+
+# Construir lista de coeficientes candidatos, excluyendo latentes del GPLVM.
+candidatos = []
+for vi, vname in enumerate(sel_names):
+    if str(vname).startswith('Latent_'):
+        continue
+    for ci, cname in enumerate(clases):
+        candidatos.append((mean_abs[vi, ci], vname, cname))
+candidatos.sort(reverse=True)
+sel = candidatos[:min(TOP_COEFS, len(candidatos))]
+print(f"  Mostrando {len(sel)} coeficientes con mayor |media| posterior.")
+
+# HDI 94% por muestreo directo.
+def hdi(x, p=0.94):
+    xs = np.sort(x)
+    n = len(xs); k = int(np.floor(p * n))
+    widths = xs[k:] - xs[:n - k]
+    j = int(np.argmin(widths))
+    return xs[j], xs[j + k]
+
+filas = []
+for _, vname, cname in sel:
+    vi = sel_names.index(vname); ci = clases.index(cname)
+    draws = post.values[:, :, vi, ci].ravel()
+    lo, hi = hdi(draws)
+    filas.append((f"{vname}  →  {cname}", float(np.median(draws)), lo, hi))
+
+# Ordenar por magnitud (menor arriba; al ser eje y creciente, el mayor queda abajo).
+filas.sort(key=lambda r: abs(r[1]))
+fig_h = max(2.6, 0.34 * len(filas) + 0.9)
+fig, ax = plt.subplots(figsize=(7, fig_h))
+ypos = np.arange(len(filas))
+for y, (lab, med, lo, hi) in zip(ypos, filas):
+    color = '#1f77b4' if (lo > 0 or hi < 0) else '#9aa0a6'  # azul si HDI excluye 0
+    ax.plot([lo, hi], [y, y], color=color, lw=2.2, solid_capstyle='round')
+    ax.plot(med, y, 'o', color=color, ms=5.5, mfc='white', mew=1.5)
+ax.axvline(0, color='red', ls='--', lw=1.1)
+ax.set_yticks(ypos)
+ax.set_yticklabels([f[0] for f in filas], fontsize=8.5)
+ax.set_xlabel('Coeficiente β (HDI 94%)', fontsize=9.5)
+ax.set_title(f'Coeficientes posteriores con mayor magnitud — BLR ({TIPO_PRIOR.upper()})',
+             fontsize=10.5, fontweight='bold')
+ax.margins(y=0.03)
+ax.grid(axis='x', ls=':', alpha=0.4)
+plt.tight_layout()
+plt.savefig(f'5_posterior_coeficientes_{TIPO_PRIOR}.png', dpi=200,
+            bbox_inches='tight', facecolor='white')
+plt.close()
+print(f"-> Guardado: '5_posterior_coeficientes_{TIPO_PRIOR}.png'")
+
+# --- Figura 6: densidades posteriores de ESOS MISMOS coeficientes top ---
+# Rejilla compacta (máx. 5 columnas) con una densidad por coeficiente top,
+# línea de referencia en cero. Complementa al forest plot mostrando la FORMA
+# de cada posterior (pico en cero + cola lateral en los pocos con señal).
+sel_orden = sorted(sel, key=lambda r: -r[0])   # mayor magnitud primero
+n_panels = len(sel_orden)
+ncol = min(5, n_panels)
+nrow = int(np.ceil(n_panels / ncol))
+fig, axes = plt.subplots(nrow, ncol, figsize=(2.1 * ncol, 1.7 * nrow),
+                         squeeze=False)
+for k, (_, vname, cname) in enumerate(sel_orden):
+    r, c = divmod(k, ncol)
+    axk = axes[r][c]
+    vi = sel_names.index(vname); ci = clases.index(cname)
+    draws = post.values[:, :, vi, ci].ravel()
+    lo, hi = hdi(draws)
+    axk.hist(draws, bins=60, density=True, color='#1f77b4', alpha=0.55)
+    axk.axvline(0, color='red', ls='--', lw=1.0)
+    axk.plot([lo, hi], [0, 0], color='k', lw=3, solid_capstyle='butt')
+    axk.set_title(f"{vname}\n→ {cname}", fontsize=7.2)
+    axk.set_yticks([]); axk.tick_params(axis='x', labelsize=6.5)
+# apagar ejes sobrantes
+for k in range(n_panels, nrow * ncol):
+    r, c = divmod(k, ncol); axes[r][c].axis('off')
+fig.suptitle(f'Densidades posteriores de los coeficientes top — BLR '
+             f'({TIPO_PRIOR.upper()})', fontsize=10.5, fontweight='bold', y=1.0)
+plt.tight_layout()
+plt.savefig(f'6_posterior_densidades_{TIPO_PRIOR}.png', dpi=200,
+            bbox_inches='tight', facecolor='white')
+plt.close()
+print(f"-> Guardado: '6_posterior_densidades_{TIPO_PRIOR}.png'")
+
+# =========================================================
+# 5. DIAGNÓSTICO PSIS-LOO (complementario, NO es accuracy)
+# =========================================================
+print("\nDiagnóstico PSIS-LOO (ELPD y Pareto k-hat)...")
 loo_result = az.loo(idata, pointwise=True)
-loo_text = str(loo_result) 
-print("\nResumen Numérico LOOCV:")
+loo_text = str(loo_result)
 print(loo_result)
 
 plt.figure(figsize=(8, 5))
 az.plot_khat(loo_result, show_bins=True)
 plt.title(f"Diagnóstico de Pareto k - {TIPO_PRIOR.upper()}")
-plt.axhline(0.7, color='red', linestyle='--', label='Límite de Peligro (0.7)')
-plt.legend()
-plt.tight_layout()
+plt.axhline(0.7, color='red', linestyle='--', label='Límite (0.7)')
+plt.legend(); plt.tight_layout()
 plt.savefig(f'2_loo_khat_plot_{TIPO_PRIOR}.png', dpi=300)
 print(f"-> Guardado: '2_loo_khat_plot_{TIPO_PRIOR}.png'")
 
 # =========================================================
-# 5. RENDIMIENTO PREDICTIVO (MATRIZ DE CONFUSIÓN)
+# 6. LOOCV EXACTO — accuracy honesta (selección DENTRO del fold)
 # =========================================================
-print("\nCalculando precisión y matriz de confusión bayesiana...")
+print("\n" + "=" * 55)
+print(" LOOCV EXACTO (BLR) — reentrena el modelo N veces")
+print(" Selección de variables ajustada DENTRO de cada fold")
+print("=" * 55)
 
-y_pred_samples = idata.posterior_predictive['y_obs'].values
-y_pred_flat = y_pred_samples.reshape(-1, len(y_idx))
+loo = LeaveOneOut()
+folds = list(loo.split(X_full))
+n = len(y_idx)
 
-y_pred_consensus = stats.mode(y_pred_flat, axis=0, keepdims=True)[0].flatten()
+resultados = {}
+if os.path.exists(CHECKPOINT_LOO):
+    with open(CHECKPOINT_LOO) as f:
+        resultados = {int(k): v for k, v in json.load(f).items()}
+    print(f"  Checkpoint: {len(resultados)}/{n} folds ya resueltos.")
 
-class_report_text = classification_report(y_idx, y_pred_consensus, target_names=le.classes_)
-print(f"\n--- REPORTE DE CLASIFICACIÓN BAYESIANO ({TIPO_PRIOR.upper()}) ---")
-print(class_report_text)
+folds_pendientes = [(fold, te) for fold, (tr, te) in enumerate(folds, start=1)
+                    if fold not in resultados]
 
-cm = confusion_matrix(y_idx, y_pred_consensus)
+for fold, te_idx in tqdm(folds_pendientes, total=len(folds_pendientes),
+                         desc="Progreso LOOCV", unit="fold"):
+    i = te_idx[0]
+    tr_idx = np.setdiff1d(np.arange(n), te_idx)
 
+    # --- Preproceso + selección ajustados SOLO con el train del fold ---
+    X_tr_s, sc_f, sel_f = ajustar_preproceso(X_full[tr_idx], y_idx[tr_idx])
+    X_te_s = aplicar_preproceso(X_full[te_idx], sc_f, sel_f)
+
+    model_fold, idata_fold = construir_y_muestrear_modelo(
+        X_tr_s, y_idx[tr_idx], n_classes, TIPO_PRIOR,
+        draws=DRAWS_CV, tune=TUNE_CV, progressbar=False)
+
+    p_te = predecir_proba_bayesiano(model_fold, idata_fold, X_te_s)
+    pred = int(np.argmax(p_te, axis=1)[0])
+
+    resultados[fold] = {'idx': int(i), 'y_true': int(y_idx[i]), 'y_pred': pred}
+    with open(CHECKPOINT_LOO, "w") as f:
+        json.dump({str(k): v for k, v in resultados.items()}, f, indent=2)
+
+y_true_loo = np.array([resultados[fold]['y_true'] for fold in sorted(resultados)])
+y_pred_loo = np.array([resultados[fold]['y_pred'] for fold in sorted(resultados)])
+
+acc_loo = accuracy_score(y_true_loo, y_pred_loo)
+bacc_loo = balanced_accuracy_score(y_true_loo, y_pred_loo)
+f1_loo = f1_score(y_true_loo, y_pred_loo, average='macro')
+
+print("\n--- MÉTRICAS LOOCV (nivel especie) ---")
+print(f"Accuracy           : {acc_loo:.2%}")
+print(f"Balanced accuracy  : {bacc_loo:.2%}")
+print(f"F1 macro           : {f1_loo:.2%}")
+
+report_loo = classification_report(
+    y_true_loo, y_pred_loo, labels=np.arange(n_classes),
+    target_names=le.classes_)
+print("\n" + report_loo)
+
+pd.DataFrame({
+    'y_true': le.inverse_transform(y_true_loo),
+    'y_pred_loo': le.inverse_transform(y_pred_loo),
+}).to_csv(f"predicciones_loocv_blr_{TIPO_PRIOR}.csv", index=False)
+print(f"-> Guardado: 'predicciones_loocv_blr_{TIPO_PRIOR}.csv'")
+
+cm_loo = confusion_matrix(y_true_loo, y_pred_loo, labels=np.arange(n_classes))
 plt.figure(figsize=(10, 8))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+sns.heatmap(cm_loo, annot=True, fmt='d', cmap='Blues',
             xticklabels=le.classes_, yticklabels=le.classes_)
-plt.title(f'Matriz de Confusión Bayesiana - {TIPO_PRIOR.upper()}', fontsize=14, fontweight='bold')
-plt.xlabel('Especie Predicha por el Modelo', fontsize=12)
-plt.ylabel('Especie Real (Verdad)', fontsize=12)
-plt.xticks(rotation=45, ha='right')
-plt.tight_layout()
-plt.savefig(f'3_matriz_confusion_{TIPO_PRIOR}.png', dpi=300)
-print(f"-> Guardado: '3_matriz_confusion_{TIPO_PRIOR}.png'")
+plt.title(f'Matriz de Confusión LOOCV — BLR ({TIPO_PRIOR.upper()})',
+          fontsize=14, fontweight='bold')
+plt.xlabel('Predicción (LOO)'); plt.ylabel('Especie Real')
+plt.xticks(rotation=45, ha='right'); plt.tight_layout()
+plt.savefig(f'3_matriz_confusion_loocv_{TIPO_PRIOR}.png', dpi=300)
+print(f"-> Guardado: '3_matriz_confusion_loocv_{TIPO_PRIOR}.png'")
 
-# =========================================================
-# 6. GUARDAR MÉTRICAS DE TEXTO COMO IMAGEN
-# =========================================================
-print("\nGuardando los resultados de texto (LOOCV y Reporte) como imagen...")
-
-texto_final = f"=== RESUMEN NUMÉRICO LOOCV ({TIPO_PRIOR.upper()}) ===\n"
-texto_final += loo_text + "\n\n"
-texto_final += f"=== REPORTE DE CLASIFICACIÓN BAYESIANO ({TIPO_PRIOR.upper()}) ===\n"
-texto_final += class_report_text
-
-fig_text, ax_text = plt.subplots(figsize=(10, 8))
-ax_text.axis('off') 
-
-ax_text.text(0.01, 0.99, texto_final, fontsize=12, fontfamily='monospace', 
+# Resumen como imagen
+texto_final = (f"=== MÉTRICAS LOOCV EXACTO ({TIPO_PRIOR.upper()}) ===\n"
+               f"Representación: crudas{'+latentes' if USAR_LATENTES_GPLVM else ''} | "
+               f"k={K_FEATURES if USAR_SELECCION else 'todas'}\n"
+               f"Accuracy          : {acc_loo:.4f}\n"
+               f"Balanced accuracy : {bacc_loo:.4f}\n"
+               f"F1 macro          : {f1_loo:.4f}\n\n"
+               + report_loo + "\n\n"
+               f"=== DIAGNÓSTICO PSIS-LOO ({TIPO_PRIOR.upper()}) ===\n" + loo_text)
+fig_text, ax_text = plt.subplots(figsize=(10, 9)); ax_text.axis('off')
+ax_text.text(0.01, 0.99, texto_final, fontsize=11, fontfamily='monospace',
              va='top', ha='left', transform=ax_text.transAxes)
-
-plt.savefig(f'4_metricas_resumen_{TIPO_PRIOR}.png', dpi=300, bbox_inches='tight', facecolor='white')
+plt.savefig(f'4_metricas_resumen_{TIPO_PRIOR}.png', dpi=300,
+            bbox_inches='tight', facecolor='white')
 print(f"-> Guardado: '4_metricas_resumen_{TIPO_PRIOR}.png'")
 
-print("\n¡Ejecución completada con éxito! Revisa los 4 gráficos generados en tu carpeta.")
-
-
 # =========================================================
-# 7. PROBABILIDADES PREDICTIVAS (TODAS LAS VARIABLES)
+# 7. PROYECCIÓN DE FÓSILES (usa preproceso global de sección 4)
 # =========================================================
-print("\nGenerando curvas de probabilidad para TODAS las variables (esto puede tardar unos segundos)...")
-
-N_puntos = 100
-x_grid = np.linspace(-3, 3, N_puntos)
-
-# Configurar la cuadrícula de subplots
-cols = 4
-rows = int(np.ceil(n_features / cols))
-fig, axes = plt.subplots(rows, cols, figsize=(16, 4 * rows))
-axes = axes.flatten()
-colors = sns.color_palette("husl", n_classes)
-
-# Iteramos sobre cada variable
-for idx, var_name in enumerate(feature_names):
-    ax = axes[idx]
-    
-    # 1. Crear datos sintéticos: Variamos ESTA variable, el resto se queda en 0 (su media)
-    X_sintetico = np.zeros((N_puntos, n_features))
-    X_sintetico[:, idx] = x_grid
-    
-    # 2. Generar predicciones para esta configuración
-    with bayesian_logistic:
-        pm.set_data({'X': X_sintetico, 'y': np.zeros(N_puntos, dtype=int)})
-        ppc_var = pm.sample_posterior_predictive(
-            idata, 
-            var_names=["p"], 
-            random_seed=42,
-            predictions=True,
-            progressbar=False # Apagamos la barra para no saturar la consola
-        )
-        
-    p_muestras = ppc_var.predictions['p'].values
-    p_muestras_plano = p_muestras.reshape(-1, N_puntos, n_classes)
-    p_media = p_muestras_plano.mean(axis=0)
-    
-    # 3. Graficar en su respectivo subplot
-    for c in range(n_classes):
-        ax.plot(x_grid, p_media[:, c], color=colors[c], linewidth=2)
-        # Pasamos el parámetro 'ax=ax' para que ArviZ dibuje en el recuadro correcto
-        az.plot_hdi(x_grid, p_muestras_plano[:, :, c], ax=ax, color=colors[c], fill_kwargs={'alpha': 0.15})
-        
-    ax.set_title(f"vs {var_name}", fontsize=12, fontweight='bold')
-    ax.set_ylim(bottom=0) 
-    ax.axvline(0, color='gray', linestyle='--', alpha=0.5)
-    
-    # Etiquetas de los ejes solo en los bordes para mantenerlo limpio
-    if idx % cols == 0:
-        ax.set_ylabel("Probabilidad", fontsize=10)
-    if idx >= n_features - cols:
-        ax.set_xlabel("Valor Estandarizado", fontsize=10)
-
-# Borrar los recuadros sobrantes si n_features no es múltiplo de cols
-for idx in range(n_features, len(axes)):
-    fig.delaxes(axes[idx])
-
-# Crear una única leyenda global abajo
-handles = [mpatches.Patch(color=colors[c], label=f"{le.classes_[c]}") for c in range(n_classes)]
-fig.legend(handles=handles, title="Especie", loc='lower center', ncol=min(n_classes, 4), bbox_to_anchor=(0.5, 0))
-
-# Ajustar márgenes para hacer hueco a la leyenda
-plt.tight_layout(rect=[0, 0.08, 1, 1])
-
-plt.savefig(f'5_curvas_prob_grid_{TIPO_PRIOR}.png', dpi=300, bbox_inches='tight')
-print(f"-> Guardado: '5_curvas_prob_grid_{TIPO_PRIOR}.png'")
-
-# =========================================================
-# 8. PREDICCIÓN SOBRE DATOS EXTINCT
-#    Después de entrenar con los extant, cargamos las filas
-#    extinct, las pasamos por el modelo y guardamos:
-#      · La especie extant más probable para cada fósil
-#      · La probabilidad de cada especie extant (ranking)
-#    Nota: la predicción NO es la especie real del fósil
-#    (que es desconocida o distinta), sino la especie
-#    extant a la que más se parece morfológicamente.
-# =========================================================
-print("\n" + "="*50)
-print(" FASE EXTRA: PREDICCIÓN SOBRE DATOS EXTINCT")
-print("="*50)
+print("\n" + "=" * 55)
+print(" PROYECCIÓN DE FÓSILES (EXTINCT)")
+print("=" * 55)
 
 df_full = pd.read_csv('src/dataset_nbool_std.csv')
 df_full['Extant/Extinct '] = df_full['Extant/Extinct '].str.strip()
 extinct_df = df_full[df_full['Extant/Extinct '] == 'Extinct'].copy()
 
 if len(extinct_df) == 0:
-    print("No se encontraron filas con 'Extinct' en el dataset.")
+    print("No se encontraron filas 'Extinct'.")
 else:
-    X_extinct_raw = extinct_df.drop(columns=['Target_Specie', 'Extant/Extinct ', 'Specimen', 'ID'],
-                                     errors='ignore')
-    # Aseguramos las mismas columnas que el entrenamiento
-    X_extinct_raw = X_extinct_raw.reindex(columns=feature_names, fill_value=0)
-    X_extinct_scaled = scaler.transform(X_extinct_raw)
-
+    X_ext_raw = extinct_df.drop(
+        columns=['Target_Specie', 'Extant/Extinct ', 'Specimen', 'ID'],
+        errors='ignore')
+    # Reindexar a las columnas crudas; las latentes de fósiles, si no existen,
+    # se rellenan a 0 (el GPLVM no proyecta fósiles aquí). Si tienes latentes
+    # de fósiles, cárgalas igual que en la sección 1.
+    X_ext_raw = X_ext_raw.reindex(columns=feature_names, fill_value=0)
+    X_ext_proc = aplicar_preproceso(X_ext_raw.values, scaler_global, selector_global)
     extinct_ids = extinct_df['Specimen'].values
 
     print(f"Muestras extinct a predecir: {len(extinct_ids)}")
-    print("Calculando probabilidades a posteriori para los fósiles...")
-
-    with bayesian_logistic:
-        pm.set_data({'X': X_extinct_scaled, 'y': np.zeros(len(X_extinct_scaled), dtype=int)})
-        ppc_extinct = pm.sample_posterior_predictive(
-            idata, predictions=True, var_names=['p'],
-            random_seed=42, progressbar=True
-        )
-
-    # p_mean shape: (n_extinct, n_classes)
-    p_samples_ext = ppc_extinct.predictions['p'].values
-    p_mean_ext = p_samples_ext.reshape(-1, len(X_extinct_scaled), n_classes).mean(axis=0)
-
-    # Especie más probable para cada fósil
-    best_idx_ext  = np.argmax(p_mean_ext, axis=1)
-    best_sp_ext   = le.inverse_transform(best_idx_ext)
+    p_mean_ext = predecir_proba_bayesiano(bayesian_logistic, idata, X_ext_proc)
+    best_idx_ext = np.argmax(p_mean_ext, axis=1)
+    best_sp_ext = le.inverse_transform(best_idx_ext)
     best_prob_ext = np.max(p_mean_ext, axis=1)
 
-    # Tabla completa con probabilidades por especie
-    prob_rows_ext = []
+    rows = []
     for i, specimen in enumerate(extinct_ids):
         row = {'Specimen_Extinct': specimen}
-        for c, sp_name in enumerate(le.classes_):
-            row[f"P_{sp_name.replace(' ', '_')}"] = np.round(p_mean_ext[i, c], 4)
+        for c, sp in enumerate(le.classes_):
+            row[f"P_{sp.replace(' ', '_')}"] = np.round(p_mean_ext[i, c], 4)
         row['Best_Extant_Specie'] = best_sp_ext[i]
-        row['Best_Extant_Prob']   = np.round(best_prob_ext[i], 4)
-        prob_rows_ext.append(row)
+        row['Best_Extant_Prob'] = np.round(best_prob_ext[i], 4)
+        rows.append(row)
+    pd.DataFrame(rows).to_csv(f"predicciones_extinct_blr_{TIPO_PRIOR}.csv", index=False)
+    print(f"-> Guardado: 'predicciones_extinct_blr_{TIPO_PRIOR}.csv'")
 
-    probs_extinct_table = pd.DataFrame(prob_rows_ext)
-    output_extinct_csv = f"predicciones_extinct_blr_{TIPO_PRIOR}.csv"
-    probs_extinct_table.to_csv(output_extinct_csv, index=False)
-    print(f"-> Guardado: '{output_extinct_csv}'")
-    print(probs_extinct_table[['Specimen_Extinct', 'Best_Extant_Specie', 'Best_Extant_Prob']].to_string(index=False))
-
-    # Gráfico: distribución de las asignaciones (¿a qué especie extant se parecen más los fósiles?)
-    assignment_counts = pd.Series(best_sp_ext).value_counts()
-    plt.figure(figsize=(10, 5))
-    bars = plt.bar(assignment_counts.index, assignment_counts.values,
-                   color=sns.color_palette("husl", len(assignment_counts)))
-    plt.title(f"Asignación de Fósiles a Especies Extant — BLR ({TIPO_PRIOR.upper()})")
-    plt.xlabel("Especie Extant más probable")
-    plt.ylabel("Número de Fósiles asignados")
-    plt.xticks(rotation=45, ha='right')
-    for bar in bars:
-        plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.1,
-                 str(int(bar.get_height())), ha='center', fontweight='bold')
-    plt.tight_layout()
-    plt.savefig(f'6_asignacion_fosiles_extant_{TIPO_PRIOR}.png', dpi=300)
-    plt.close()
-    print(f"-> Guardado: '6_asignacion_fosiles_extant_{TIPO_PRIOR}.png'")
-
-    # =========================================================
-    # MATRIZ DE ELECCIONES: extinct × extant
-    #    Para cada especie extinct, cuántas veces fue elegida
-    #    cada especie extant como la predicción más probable.
-    # =========================================================
-    print("\n" + "="*50)
-    print(" FASE EXTRA 2: MATRIZ DE ELECCIONES (EXTINCT × EXTANT)")
-    print("="*50)
-
-    # Etiqueta de especie para cada fósil (si existe en el CSV)
-    extinct_species_col = 'Target_Specie'
-    if extinct_species_col in extinct_df.columns:
-        extinct_species_labels = extinct_df[extinct_species_col].values
-    else:
-        extinct_species_labels = extinct_ids  # fallback: Specimen
-
-    extinct_species_unique = pd.unique(extinct_species_labels)
-    extant_species_list = list(le.classes_)  # orden canónico del LabelEncoder
-
-    count_matrix = pd.DataFrame(
-        0,
-        index=sorted(extinct_species_unique),
-        columns=extant_species_list
-    )
-
-    for i in range(len(extinct_ids)):
-        extinct_sp = extinct_species_labels[i]
-        chosen_extant = best_sp_ext[i]
-        if chosen_extant in count_matrix.columns:
-            count_matrix.loc[extinct_sp, chosen_extant] += 1
-
-    # Guardamos como CSV
-    output_count_matrix_csv = f"7_matriz_elecciones_extinct_extant_{TIPO_PRIOR}.csv"
-    count_matrix.to_csv(output_count_matrix_csv)
-    print(f"📁 Guardado: '{output_count_matrix_csv}'")
-    print(count_matrix.to_string())
-
-    # Visualización como heatmap
-    plt.figure(figsize=(max(10, len(extant_species_list) * 1.2),
-                        max(6,  len(extinct_species_unique) * 0.8)))
-    sns.heatmap(
-        count_matrix,
-        annot=True, fmt='d', cmap='YlOrRd',
-        linewidths=0.5, linecolor='lightgrey',
-        cbar_kws={'label': 'Nº de veces elegida'}
-    )
-    plt.title(f"Matriz de Elecciones: Especies Extinct × Especies Extant\n"
-              f"(BLR {TIPO_PRIOR.upper()} — predicción más probable por fósil)",
-              fontsize=12)
-    plt.xlabel("Especie Extant elegida", fontsize=11)
-    plt.ylabel("Especie Extinct", fontsize=11)
-    plt.xticks(rotation=45, ha='right')
-    plt.yticks(rotation=0)
-    plt.tight_layout()
-    plt.savefig(f"7_matriz_elecciones_extinct_extant_{TIPO_PRIOR}.png", dpi=300)
-    plt.close()
-    print(f"-> Guardado: '7_matriz_elecciones_extinct_extant_{TIPO_PRIOR}.png'")
-
-print("\n¡Ejecución completada con éxito! Revisa todos los archivos generados.")
+print("\n✅ Ejecución completada: LOOCV honesto + PSIS-LOO + proyección de fósiles.")

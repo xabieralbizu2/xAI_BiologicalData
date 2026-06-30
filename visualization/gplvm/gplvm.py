@@ -81,7 +81,7 @@ class bGPLVM(BayesianGPLVM):
 # =========================================================
 # 3. ENTRENAMIENTO Y EXPORTACIÓN DEL ESPACIO LATENTE
 # =========================================================
-LATENT_DIM = 3  
+LATENT_DIM = 5  
 
 N, data_dim = Y_all_tensor.shape
 model = bGPLVM(N, data_dim, latent_dim=LATENT_DIM, n_inducing=75, Y=Y_all_tensor)
@@ -475,18 +475,43 @@ ax_box.set_title('σ por dimensión latente')
 ax_box.grid(True, linestyle='--', alpha=0.4)
 
 # Scatter: sigma_mean vs nearest_species distance (solo fósiles)
+# Sin nombres de individuos; cada punto se codifica por su especie extante
+# más cercana mediante la FORMA del marcador (el color sigue siendo σ media).
 ax_sc = axes_u[1]
 if mask_extinct.sum() > 0:
-    sc = ax_sc.scatter(
-        sigma_extinct,
-        D_euclidean[mask_extinct].min(axis=1),
-        c=sigma_extinct, cmap='Reds', s=60, edgecolors='k', linewidths=0.5, zorder=3
-    )
-    for i, name in enumerate(fossil_labels):
-        ax_sc.annotate(name[:12], (sigma_extinct[i],
-                                    D_euclidean[mask_extinct][i].min()),
-                       fontsize=6, xytext=(4, 2), textcoords='offset points')
+    y_sc = D_euclidean[mask_extinct].min(axis=1)
+    # Especie extante más cercana de cada fósil (índice -> nombre)
+    nearest_idx = D_euclidean[mask_extinct].argmin(axis=1)
+
+    # Repertorio de formas; se reparte entre las especies presentes
+    markers_pool = ['o', 's', '^', 'D', 'v', 'P', '*', 'X', '<', '>', 'p', 'h']
+    present_sp = sorted(set(nearest_idx))
+    marker_for_sp = {sp_i: markers_pool[k % len(markers_pool)]
+                     for k, sp_i in enumerate(present_sp)}
+
+    sc = None
+    for sp_i in present_sp:
+        m = nearest_idx == sp_i
+        sc = ax_sc.scatter(
+            sigma_extinct[m], y_sc[m],
+            c=sigma_extinct[m], cmap='Reds',
+            vmin=sigma_extinct.min(), vmax=sigma_extinct.max(),
+            marker=marker_for_sp[sp_i], s=70,
+            edgecolors='k', linewidths=0.5, zorder=3
+        )
     plt.colorbar(sc, ax=ax_sc, label='σ media')
+
+    # Leyenda de formas -> especie (marcador en negro para que se distinga
+    # de la escala de color, que codifica σ).
+    shape_handles = [
+        plt.Line2D([0], [0], marker=marker_for_sp[sp_i], color='none',
+                   markerfacecolor='gray', markeredgecolor='k',
+                   markersize=8, linestyle='None', label=unique_sp[sp_i][:18])
+        for sp_i in present_sp
+    ]
+    ax_sc.legend(handles=shape_handles, title='Especie extante más cercana',
+                 fontsize=7, title_fontsize=8, loc='best')
+
     ax_sc.set_xlabel('Incertidumbre media (σ)')
     ax_sc.set_ylabel('Distancia mín. a especie extante')
     ax_sc.set_title('Fósiles: incertidumbre vs distancia a especie más cercana')

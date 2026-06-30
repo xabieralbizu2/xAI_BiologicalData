@@ -1,0 +1,10 @@
+- centrarse modelizado
+- los modelos dan mas info
+- hilo: tratar datos MUY chungos on métodos robustos
+- jerarquia, gplvm -> construir hiperprior
+- datos distintos, ruido con fósiles
+- jerarquicos: estudiar coeficientes, importancia de variables, SHAP(?)
+- pillar GPLVM y entrenar
+- contar MCMC, que significa prior u otro, hiperparametros, etc (metodologia)
+- sota: que se hace actualmente
+-*contar que estamos en el paper
