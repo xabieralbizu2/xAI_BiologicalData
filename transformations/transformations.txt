@@ -1,5 +1,0 @@
-This folder is used for generating new datasets from the original one applying transformations.
-
-src: original dataset
-one_hot: one-hot transformation to cat vars, without using location
-normalization: normalization test results prior and after normalization transfomation and normalized dataset

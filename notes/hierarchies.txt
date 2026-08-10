@@ -1,3 +1,0 @@
-1. A: papio                 B: other
-2. A: papio + Lophocebus    B: other        C: Theropitecus (BHC sobre GPLVM)   (3 niveles)
-3. A: papio                 B: other        C: Theropitecus                     (3 niveles)
