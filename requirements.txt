@@ -1,0 +1,16 @@
+# Python 3.10+
+numpy
+pandas
+scipy
+scikit-learn
+pymc>=5
+pytensor
+arviz
+torch
+gpytorch
+matplotlib
+seaborn
+networkx
+tqdm
+openpyxl
+jupyter

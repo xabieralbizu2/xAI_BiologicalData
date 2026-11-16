@@ -21,7 +21,7 @@ COLUMNA_ESTADO = 'Extant/Extinct '
 # Nuevos nombres de salida
 SALIDA_EMD = 'distancias_emd.csv'
 SALIDA_PVALOR = 'significancia_pvalor.csv'
-SALIDA_GMM = 'verosimilitud_gmm.csv'
+SALIDA_GMM = 'verosimilitud_gmm'
 # =================================================
 
 def calcular_emd(data1, data2):
@@ -100,9 +100,9 @@ def generar_analisis_gmm(df, grupo_base, grupo_evaluar, nombre_base, nombre_eval
     emd_gmm = stats.wasserstein_distance(ll_base, ll_evaluar)
     
     # Guardar resultados
-    df_gmm.to_csv(f"{SALIDA_GMM}_{index}", index=False)
+    df_gmm.to_csv(f"{SALIDA_GMM}_{index}.csv", index=False)
     
-    print(f"✅ Análisis GMM guardado en: {SALIDA_GMM}_{index}")
+    print(f"✅ Análisis GMM guardado en: {SALIDA_GMM}_{index}.csv")
     print(f"   Distancia EMD de verosimilitud global: {emd_gmm:.4f}\n")
 
 def generar_reportes_modularizados():

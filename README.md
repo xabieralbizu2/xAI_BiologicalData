@@ -1,6 +1,6 @@
-# Explainable AI for Biological Data
+# Bayesian Uncertainty Quantification for Noisy, Small-Sample Classification
 
-### Interpretable, Uncertainty-Aware Classification of Primate Dental Microtexture
+### Interpretable, uncertainty-aware classification of primate dental microtexture
 
 **B.S. Thesis — Mathematical Engineering and Artificial Intelligence**
 ICAI, Universidad Pontificia Comillas · 2025–2026
@@ -60,8 +60,12 @@ A variational Bayesian **GPLVM** (Matérn-5/2 kernel, 75 inducing points) embeds
 ├── probabilistic_models/   # Layer 1: Bayesian logistic regression (blr.py) + hierarchical cascade
 ├── ml_models/              # Classical baselines + hierarchical model comparison
 ├── visualization/          # Layer 3: GPLVM, BHC, latent-space discovery; PCA/LDA projections
-└── previous_work/          # Reference materials the thesis builds on
+├── thesis.pdf              # Full thesis document
+├── requirements.txt
+└── LICENSE
 ```
+
+Each stage keeps its input datasets in its own `src/` folder and its outputs in `results/`. Code comments and output filenames are in Spanish.
 
 Key scripts:
 
@@ -72,6 +76,37 @@ Key scripts:
 | `feature_engineering/bayesian_feature_selection.py` | Horseshoe-based variable importance |
 | `eda/variable_analysis.py` | GMM cross-likelihood + domain-shift tests (Layer 2) |
 | `visualization/gplvm/` | Variational GPLVM + BHC latent-structure discovery (Layer 3) |
+
+---
+
+## How to reproduce
+
+```bash
+git clone https://github.com/xabieralbizu2/xAI_BiologicalData.git
+cd xAI_BiologicalData
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Run each script from its own folder (paths are relative to it). The intermediate datasets each stage needs are already in its `src/` folder, so any stage can be run on its own. The full pipeline order is:
+
+| Step | Script | Output |
+|------|--------|--------|
+| 1. Preprocessing | `transformations/one_hot/one_hot.py` → `transformations/normalization/normalization.py` → `transformations/standarization/standarization.py` | One-hot encoded, Yeo–Johnson-normalized and standardized datasets |
+| 2. Drop categorical columns | `eda/src/drop_boolean_columns.ipynb` | Continuous-only dataset (`*_nbool_*`) |
+| 3. Layer 2 — comparability | `eda/variable_analysis.py` | GMM cross-likelihood, EMD, Mann–Whitney |
+| 4. Feature selection | `feature_engineering/bayesian_feature_selection.py` | Horseshoe-selected extant dataset |
+| 5. Layer 3 — latent space | `visualization/gplvm/gplvm.py` → `visualization/gplvm/latent_structure_discovery.py` | GPLVM embedding, BHC vs. DP clustering |
+| 6. Layer 1 — Bayesian classifiers | `probabilistic_models/blr.py` (set `TIPO_PRIOR`) → `probabilistic_models/blr_hierarchical.py` | LOO metrics, posteriors, fossil predictions |
+| 7. Baselines | `ml_models/ml_models.py`, `ml_models/hierarchical_models.py` | Classical and hierarchical baselines |
+
+Exact LOO-CV with NUTS refits the model once per specimen, so it is slow; `blr.py` and `blr_hierarchical.py` save a checkpoint after each fold so an interrupted run resumes where it stopped.
+
+---
+
+## Data
+
+160 specimens of African cercopithecids (125 extant, 35 fossil) with 107 dental microwear texture variables (ISO and SSFA parameters), from the dataset of Martínez et al. (2022). The data belongs to its original authors and is not covered by this repository's license.
 
 ---
 
@@ -99,6 +134,12 @@ Key scripts:
 | Extant–fossil domain shift | *p* < 10⁻¹⁸ |
 | Unsupervised phylogeny recovery (BHC) | NMI = 0.85, ARI = 0.58 |
 | Dirichlet-Process baseline | NMI = 0.11 (collapses to 1 cluster) |
+
+---
+
+## License
+
+Code released under the MIT License (see `LICENSE`). The dataset is excluded.
 
 ---
 
