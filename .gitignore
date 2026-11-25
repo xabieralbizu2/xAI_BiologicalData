@@ -16,3 +16,6 @@ loo_checkpoint_*.json
 Thumbs.db
 .vscode/
 .idea/
+
+# run_all.sh output
+runs/

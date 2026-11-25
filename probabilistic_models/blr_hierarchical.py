@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore")
 # =========================================================
 # CONFIGURACIÓN GENERAL
 # =========================================================
-TIPO_PRIOR = "horseshoe"  # Opciones: "lasso", "gaussian", "horseshoe", "spike_and_slab"
+TIPO_PRIOR = os.environ.get("TIPO_PRIOR", "horseshoe")  # Opciones: "lasso", "gaussian", "horseshoe", "spike_and_slab"
 FILE_PATH = "src/dataset_con_grupos.csv"
 CHAINS = 4
 DRAWS = 1000
@@ -45,7 +45,7 @@ TARGET_ACCEPT = 0.9      # 0.9 en vez de 0.99: evita el coste x5-x10 de NUTS
 #              usa GPLVM ni Bhattacharyya: el árbol es el que tú pasas). Para el árbol
 #              de la imagen (7 especies) se entrenan 6 submodelos (6 nodos internos).
 # En el barrido honesto H2 (0.272) superó a H3 (0.208) a nivel especie.
-JERARQUIA = "TREE"
+JERARQUIA = os.environ.get("JERARQUIA", "TREE")   # override: JERARQUIA=DENDRO python blr_hierarchical.py
 
 # --- Parámetros del dendrograma (solo se usan si JERARQUIA == "DENDRO") ---
 DENDRO_LINKAGE = "ward"        # "ward" recupera el clado Papio y da un árbol binario

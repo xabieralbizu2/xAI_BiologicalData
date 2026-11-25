@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore")
 # CONFIGURACIÓN
 # =========================================================
 # Prior del modelo bayesiano: "lasso", "gaussian", "horseshoe", "spike_and_slab"
-TIPO_PRIOR = "horseshoe"
+TIPO_PRIOR = os.environ.get("TIPO_PRIOR", "horseshoe")   # override: TIPO_PRIOR=gaussian python blr.py
 CHAINS = 4
 DRAWS = 1000
 TUNE = 1000              # 1000 basta para un modelo lineal pequeño (antes 1500)
